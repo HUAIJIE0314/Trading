@@ -4,11 +4,11 @@ import pandas_ta as ta
 import requests
 import time
 from tqdm import tqdm
-
+import random
 
 # enableRSI = True
 DayInterval = 3 # 3 days
-filterFlag = True # True / False
+filterFlag = False # True / False
 
 
 
@@ -140,7 +140,16 @@ def check_stock_strategy(ticker):
             
         if df.empty or len(df) < 65:
             return False
-            
+        
+        
+        # 🌟 新增：成交量濾網 (Volume)
+        # yfinance 的 Volume 欄位預設是「股數」，所以 1000 張 = 1,000,000 股
+        today_volume = df['Volume'].iloc[-1]
+        
+        # 如果今天成交量小於 1000 張 (1百萬股)，直接淘汰，不用算後面的技術指標了！
+        if today_volume < 1000000:
+            return False
+        
         # 1. 計算技術指標
         df['RSI'] = df.ta.rsi(length=RSI_PERIOD)
         df['5MA'] = df.ta.sma(length=5)
@@ -237,14 +246,34 @@ def main():
             # 如果符合條件，把「代號 + 中文名」整包存進清單裡！
             matched_stocks.append(f"{stock_symbol} ({stock_name})")
             
-        time.sleep(1) # 避免 yfinance 阻擋
+        # time.sleep(0.6) # 避免 yfinance 阻擋
+        time.sleep(random.uniform(0.5, 0.7))
         
     # 彙整結果並發送 LINE
     if matched_stocks:
-        message = f"📈 【動能突破選股結果出爐】\n\n滿足以下條件：\n1. RSI > 60\n2. KD(60) K值近 {DayInterval} 日向上突破 50\n3. 5MA 近 {DayInterval} 日向上突破 60MA\n\n符合標的：\n"
-        for s in matched_stocks:
-            message += f"• {s}\n"
-        send_line_message(message, LINE_CHANNEL_ACCESS_TOKEN, TARGET_ID)
+# =============================================================================
+#         message = f"📈 【動能突破選股結果出爐】\n\n滿足以下條件：\n1. RSI > 60\n2. KD(60) K值近 {DayInterval} 日向上突破 50\n3. 5MA 近 {DayInterval} 日向上突破 60MA\n\n符合標的：\n"
+#         for s in matched_stocks:
+#             message += f"• {s}\n"
+#         send_line_message(message, LINE_CHANNEL_ACCESS_TOKEN, TARGET_ID)
+# =============================================================================
+        chunk_size = 30 # 一次最多傳送 30 檔標的
+        total_matched = len(matched_stocks)
+        
+        # 第一則訊息：發送標題與總結
+        # header_message = f"📈 【動能突破選股結果出爐】\n\n🎯 條件：RSI>60, KD(60) & 5MA 近 {DayInterval} 日雙金叉\n共發現 {total_matched} 檔符合標的：\n"
+        # header_message = f"📈 【動能突破選股結果出爐】\n\n🎯 滿足以下條件：條件：RSI > 60\n2. KD(60) K值近 {DayInterval} 日向上突破 50\n3. 5MA 近 {DayInterval} 日向上突破 60MA\n\n符合標的：\n共發現 {total_matched} 檔符合標的：\n"
+        header_message = f"📈 【動能突破選股結果出爐】\n\n🎯 滿足以下條件：條件：RSI > 60\n2. KD(60) K值近 {DayInterval} 日向上突破 50\n3. 5MA 近 {DayInterval} 日向上突破 60MA\n4. 成交量大於 1000 張\n\n符合標的：\n共發現 {total_matched} 檔符合標的：\n"
+        send_line_message(header_message, LINE_CHANNEL_ACCESS_TOKEN, TARGET_ID)
+        
+        # 分批發送名單
+        for i in range(0, total_matched, chunk_size):
+            chunk_list = matched_stocks[i:i + chunk_size]
+            message = ""
+            for s in chunk_list:
+                message += f"• {s}\n"
+            send_line_message(message, LINE_CHANNEL_ACCESS_TOKEN, TARGET_ID)
+            time.sleep(1) # 避免發太快被 LINE 阻擋
     else:
         print("\n今日無符合條件的股票。")
         send_line_message("\n今日無符合「動能突破與雙重金叉」條件的股票。", LINE_CHANNEL_ACCESS_TOKEN, TARGET_ID)
