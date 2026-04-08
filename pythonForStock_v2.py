@@ -13,19 +13,22 @@ filterFlag = False # True / False
 
 
 import os
-LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
-TARGET_ID = os.environ.get('TARGET_ID')
+# LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
+# TARGET_ID = os.environ.get('TARGET_ID')
 
 # --- 參數設定區 ---
 # 1. 請填入你在 LINE Developers 申請的 Channel Access Token
-# LINE_CHANNEL_ACCESS_TOKEN = "gbWfkE+jnMW8L9OB4agKPulEeKwzBP95WQ4Non4I6Q5lVCnNdik/l6cJ6PhV/krB7ss5mtjtr66K06m2VU1njN9sbUtfv1HftPlHyrwYCeKCOCqKMdz05lWboSg9FX0G3Wtocisn8hZ2IFFT50WrgwdB04t89/1O/w1cDnyilFU=" # "你的_CHANNEL_ACCESS_TOKEN_請填這"
+LINE_CHANNEL_ACCESS_TOKEN = "gbWfkE+jnMW8L9OB4agKPulEeKwzBP95WQ4Non4I6Q5lVCnNdik/l6cJ6PhV/krB7ss5mtjtr66K06m2VU1njN9sbUtfv1HftPlHyrwYCeKCOCqKMdz05lWboSg9FX0G3Wtocisn8hZ2IFFT50WrgwdB04t89/1O/w1cDnyilFU=" # "你的_CHANNEL_ACCESS_TOKEN_請填這"
 # 2. 請填入你的 User ID 或 Group ID (通常是 U 開頭或 C 開頭的一串亂碼)
 # TARGET_ID = "Ue64e679cfb6307bbe458a1490037f648" # "你的_USER_ID_或_GROUP_ID_請填這" 
 
 # TARGET_ID = "C404155e7f01a3fd4dbb8fdf425f90991"
 
+TARGET_ID_LIST = ["Ue64e679cfb6307bbe458a1490037f648", "C404155e7f01a3fd4dbb8fdf425f90991", "C904d5fa59a1fdf3afc8cf95ae41c1b9d"]
+
+
 RSI_PERIOD = 14
-KD_K, KD_D, KD_SMOOTH = 60, 3, 3
+KD_K, KD_D, KD_SMOOTH = 60, 3, 3 # KD 指標的參數：60期、平滑3、D值3
 
 # stock_list = ['2330.TW', '2317.TW', '2454.TW', '2603.TW', '2382.TW', '2337.TW']
 interest_list = ['2330', '2317', '2454', '2603', '2382', '2337']
@@ -131,13 +134,16 @@ def check_stock_strategy(ticker):
     try:
         # df = yf.download(ticker, period="150d", progress=False)
         # df = yf.download(ticker, period="1mo", interval="60m", progress=False)
+        
         # 修改 1：將 period 拉長到 3個月，確保 60MA 與 KD(60) 有足夠的前置數據平滑
+        # 去 Yahoo 下載這檔股票過去 3 個月的資料，並且每一根 K 棒代表 60 分鐘。
         df = yf.download(ticker, period="3mo", interval="60m", progress=False)
         
         # 解決 yfinance 新版 MultiIndex 格式問題
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
-            
+        
+        # 如果這檔股票剛上市，資料太少 (不到 65 根 K 棒)，根本算不出 60MA，就直接淘汰回傳 False。
         if df.empty or len(df) < 65:
             return False
         
@@ -251,32 +257,31 @@ def main():
         
     # 彙整結果並發送 LINE
     if matched_stocks:
-# =============================================================================
-#         message = f"📈 【動能突破選股結果出爐】\n\n滿足以下條件：\n1. RSI > 60\n2. KD(60) K值近 {DayInterval} 日向上突破 50\n3. 5MA 近 {DayInterval} 日向上突破 60MA\n\n符合標的：\n"
-#         for s in matched_stocks:
-#             message += f"• {s}\n"
-#         send_line_message(message, LINE_CHANNEL_ACCESS_TOKEN, TARGET_ID)
-# =============================================================================
-        chunk_size = 30 # 一次最多傳送 30 檔標的
-        total_matched = len(matched_stocks)
         
-        # 第一則訊息：發送標題與總結
-        # header_message = f"📈 【動能突破選股結果出爐】\n\n🎯 條件：RSI>60, KD(60) & 5MA 近 {DayInterval} 日雙金叉\n共發現 {total_matched} 檔符合標的：\n"
-        # header_message = f"📈 【動能突破選股結果出爐】\n\n🎯 滿足以下條件：條件：RSI > 60\n2. KD(60) K值近 {DayInterval} 日向上突破 50\n3. 5MA 近 {DayInterval} 日向上突破 60MA\n\n符合標的：\n共發現 {total_matched} 檔符合標的：\n"
-        header_message = f"📈 【動能突破選股結果出爐】\n\n🎯 滿足以下條件：\n1. RSI > 60\n2. KD(60) K值近 {DayInterval} 日向上突破 50\n3. 5MA 近 {DayInterval} 日向上突破 60MA\n4. 成交量大於 1000 張\n\n符合標的：\n共發現 {total_matched} 檔符合標的：\n"
-        send_line_message(header_message, LINE_CHANNEL_ACCESS_TOKEN, TARGET_ID)
-        
-        # 分批發送名單
-        for i in range(0, total_matched, chunk_size):
-            chunk_list = matched_stocks[i:i + chunk_size]
-            message = ""
-            for s in chunk_list:
-                message += f"• {s}\n"
-            send_line_message(message, LINE_CHANNEL_ACCESS_TOKEN, TARGET_ID)
-            time.sleep(1) # 避免發太快被 LINE 阻擋
+        # --- 修改這裡：對 List 裡的每一個 ID 輪流發送 ---
+        for target_id in TARGET_ID_LIST:
+            chunk_size = 30 # 一次最多傳送 30 檔標的
+            total_matched = len(matched_stocks)
+            
+            # 第一則訊息：發送標題與總結
+            # header_message = f"📈 【動能突破選股結果出爐】\n\n🎯 條件：RSI>60, KD(60) & 5MA 近 {DayInterval} 日雙金叉\n共發現 {total_matched} 檔符合標的：\n"
+            # header_message = f"📈 【動能突破選股結果出爐】\n\n🎯 滿足以下條件：條件：RSI > 60\n2. KD(60) K值近 {DayInterval} 日向上突破 50\n3. 5MA 近 {DayInterval} 日向上突破 60MA\n\n符合標的：\n共發現 {total_matched} 檔符合標的：\n"
+            header_message = f"📈 【動能突破選股結果出爐】\n\n🎯 滿足以下條件：\n1. RSI > 60\n2. KD(60) K值近 {DayInterval} 日向上突破 50\n3. 5MA 近 {DayInterval} 日向上突破 60MA\n4. 成交量大於 1000 張\n\n符合標的：\n共發現 {total_matched} 檔符合標的：\n"
+            send_line_message(header_message, LINE_CHANNEL_ACCESS_TOKEN, target_id)
+            
+            # 分批發送名單
+            for i in range(0, total_matched, chunk_size):
+                chunk_list = matched_stocks[i:i + chunk_size]
+                message = ""
+                for s in chunk_list:
+                    message += f"• {s}\n"
+                send_line_message(message, LINE_CHANNEL_ACCESS_TOKEN, target_id)
+                time.sleep(1) # 避免發太快被 LINE 阻擋
     else:
         print("\n今日無符合條件的股票。")
-        send_line_message("\n今日無符合「動能突破與雙重金叉」條件的股票。", LINE_CHANNEL_ACCESS_TOKEN, TARGET_ID)
+        # send_line_message("\n今日無符合「動能突破與雙重金叉」條件的股票。", LINE_CHANNEL_ACCESS_TOKEN, TARGET_ID)
+        for target_id in TARGET_ID_LIST:
+            send_line_message("\n今日無符合「動能突破與雙重金叉」條件的股票。", LINE_CHANNEL_ACCESS_TOKEN, target_id)
 
 
 if __name__ == "__main__":
