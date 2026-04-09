@@ -7,6 +7,7 @@ import base64
 import os
 import matplotlib.pyplot as plt
 import matplotlib.font_manager as fm
+import matplotlib.dates as mdates # 🌟 新增：用於日期格式化
 # from utils import get_all_tw_stocks_with_names
 
 # ==========================================
@@ -390,3 +391,189 @@ def send_line_image(image_url, token, target_id):
     }
     response = requests.post(url, headers=headers, json=payload)
     print("LINE 圖片發送狀態:", response.status_code)
+
+
+
+
+# 🌟 新增：針對單一股票生成詳細時序回測圖 (完全複製 strategy_v3.py 邏輯)
+def generate_detailed_backtest_plot(TICKER, stock_name, BACKTEST_DAYS=120, DayInterval=3, filename='temp_detailed_plot.png'):
+    """
+    忠實複製並封裝 strategy_v3.py 的所有邏輯，
+    針對單一股票生成包含指標、買賣點、資金曲線的 4 面板時序圖。
+    """
+    # ==========================================
+    # A. 參數設定 (與 strategy_v3.py 一致)
+    # ==========================================
+    INITIAL_CAPITAL = 500000     
+    RSI_PERIOD = 14
+    KD_K, KD_D, KD_SMOOTH = 60, 3, 3
+
+    bars_per_day = 5             
+    lookback_bars = DayInterval * bars_per_day
+    MA_sell = 60
+    MA_select = str(MA_sell) + "MA"
+    
+    # 確保 TICKER 格式正確
+    if not TICKER.endswith('.TW') and not TICKER.endswith('.TWO'):
+        try:
+            stock_dict = get_all_tw_stocks_with_names() 
+            filtered_list = {k: v for k, v in stock_dict.items() if k[:4] == TICKER}
+            if filtered_list: TICKER = list(filtered_list.keys())[0]
+            else: TICKER = TICKER + ".TW" # 預設假設
+        except: TICKER = TICKER + ".TW"
+
+    # ==========================================
+    # B. 獲取資料與計算指標 (忠實複製)
+    # ==========================================
+    if BACKTEST_DAYS > 730: BACKTEST_DAYS = 730
+
+    df = yf.download(TICKER, period=f"{BACKTEST_DAYS}d", interval="60m", progress=False)
+
+    if df.empty or len(df) < 65: return None # 資料不足無法繪圖
+
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    try:
+        df.index = df.index.tz_convert('Asia/Taipei')
+    except TypeError:
+        df.index = df.index.tz_localize('UTC').tz_convert('Asia/Taipei')
+        
+    df['RSI'] = df.ta.rsi(length=RSI_PERIOD)
+    df['5MA'] = df.ta.sma(length=5)
+    df['60MA'] = df.ta.sma(length=60)
+
+    if MA_select != '60MA': df[MA_select] = df.ta.sma(length=MA_sell)
+        
+    stoch = df.ta.stoch(k=KD_K, d=KD_D, smooth_k=KD_SMOOTH)
+    df = pd.concat([df, stoch], axis=1)
+
+    k_col = [col for col in df.columns if 'STOCHk' in col][0]
+    d_col = [col for col in df.columns if 'STOCHd' in col][0]
+
+    df['KD_Cross'] = (df[k_col] > 50) & (df[k_col].shift(1) <= 50)
+    df['MA_Cross'] = (df['5MA'] > df['60MA']) & (df['5MA'].shift(1) <= df['60MA'].shift(1))
+    df['KD_Cross_5d'] = df['KD_Cross'].rolling(window=lookback_bars).max()
+    df['MA_Cross_5d'] = df['MA_Cross'].rolling(window=lookback_bars).max()
+
+    df['MA_Golden_Cross'] = (df['KD_Cross_5d'] == 1) & (df['MA_Cross_5d'] == 1) 
+    df['Buy_Signal'] = (df['RSI'] > 60) & (df['MA_Golden_Cross'])
+
+    df['MA_Death_Cross'] = (df['5MA'] < df[MA_select]) & (df['5MA'].shift(1) >= df[MA_select].shift(1))
+    df['Sell_Signal'] = (df['MA_Death_Cross']) & (df['RSI'] < 50)
+
+    df = df.dropna()
+    if df.empty: return None
+
+    # ==========================================
+    # C. 執行回測邏輯 (忠實複製)
+    # ==========================================
+    capital = INITIAL_CAPITAL  
+    position = 0               
+    entry_price = 0.0          
+    equity_curve = [] 
+    buy_points = []
+    sell_points = []
+
+    for date, row in df.iterrows():
+        current_price = row['Close']
+        
+        if position == 0:
+            if row['Buy_Signal']:
+                shares_to_buy = int(capital / (current_price * 1.001425))
+                if shares_to_buy > 0:
+                    position = shares_to_buy
+                    entry_price = current_price
+                    capital = capital - (position * entry_price * 1.001425)
+                    buy_points.append((date, entry_price))
+                
+        elif position > 0:
+            if row['Sell_Signal']:
+                sell_revenue = position * current_price * (1 - 0.001425 - 0.003)
+                capital += sell_revenue
+                sell_points.append((date, current_price))
+                position = 0
+                entry_price = 0.0
+
+        current_equity = capital + (position * current_price * (1 - 0.001425 - 0.003))
+        equity_curve.append(current_equity)
+
+    df['Equity_Curve'] = equity_curve
+
+    # ==========================================
+    # D. 繪圖 (忠實複製包含垂直買賣線)
+    # ==========================================
+    # 設定支援中文的字體 (由 set_zh_font 初始化)
+    
+    # 創建四張圖 (價格, RSI, KD, 資金)
+    fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(15, 20), sharex=True, gridspec_kw={'height_ratios': [3.5, 1, 1, 1.5]}, dpi=100)
+
+    # 1. 價格圖 (ax1)
+    ax1.plot(df.index, df['Close'], label='Close Price', color='#d1d5db', linewidth=2, zorder=3)
+    ax1.plot(df.index, df['5MA'], label='5MA', color='#3b82f6', linewidth=1.2, alpha=0.8, zorder=2)
+    ax1.plot(df.index, df['60MA'], label='60MA', color='#ef4444', linewidth=1.2, alpha=0.8, zorder=2)
+    if MA_select != '60MA': ax1.plot(df.index, df[MA_select], label=MA_select, color='#ef4444', linewidth=1.2, alpha=0.8, zorder=2)
+
+    if buy_points:
+        b_dates, b_prices = zip(*buy_points)
+        ax1.scatter(b_dates, b_prices, marker='^', color='#22c55e', label='Buy', s=120, zorder=5)
+
+    if sell_points:
+        s_dates, s_prices = zip(*sell_points)
+        ax1.scatter(s_dates, s_prices, marker='v', color='#f97316', label='Sell', s=120, zorder=5)
+
+    ax1.set_title(f'{TICKER[:4]}({stock_name}) - 60min Trend Strategy Backtest (Last {BACKTEST_DAYS} Days)', fontsize=16, fontweight='bold')
+    ax1.set_ylabel('Price (TWD)', fontsize=12)
+    ax1.legend(loc='upper left')
+    ax1.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.7)
+
+    # 2. RSI 圖 (ax2)
+    ax2.plot(df.index, df['RSI'], color='#8b5cf6', linewidth=1.2)
+    ax2.axhline(60, color='#22c55e', linestyle='--', linewidth=1, alpha=0.8) 
+    ax2.axhline(50, color='#f97316', linestyle='--', linewidth=1, alpha=0.8) 
+    ax2.set_ylabel('RSI (14)', fontsize=12)
+    ax2.set_ylim(10, 90)
+    ax2.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.5)
+
+    # 3. KD 圖 (ax3)
+    ax3.plot(df.index, df[k_col], label='K (60,3)', color='#f59e0b', linewidth=1.5) 
+    ax3.plot(df.index, df[d_col], label='D (3)', color='#0ea5e9', linewidth=1)      
+    ax3.axhline(80, color='#ef4444', linestyle='--', linewidth=1, alpha=0.5) 
+    ax3.axhline(50, color='#6b7280', linestyle='-', linewidth=0.8, alpha=0.5)  
+    ax3.axhline(20, color='#22c55e', linestyle='--', linewidth=1, alpha=0.5) 
+    ax3.set_ylabel('KD (60)', fontsize=12)
+    ax3.set_ylim(0, 100)
+    ax3.legend(loc='upper left', fontsize=9)
+    ax3.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.5)
+
+    # 4. 資金曲線圖 (ax4)
+    ax4.plot(df.index, df['Equity_Curve'], color='#10b981', linewidth=2)
+    ax4.set_ylabel('Total Equity', fontsize=12)
+    ax4.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.5)
+
+    # 🌟 核心新增：畫出貫穿四張圖的垂直虛線 (忠實複製)
+    all_axes = [ax1, ax2, ax3, ax4]
+
+    # 買進畫綠色虛線
+    if buy_points:
+        for b_date, _ in buy_points:
+            for ax in all_axes:
+                ax.axvline(x=b_date, color='#22c55e', linestyle='--', linewidth=1.5, alpha=0.6, zorder=1)
+
+    # 賣出畫藍色虛線
+    if sell_points:
+        for s_date, _ in sell_points:
+            for ax in all_axes:
+                ax.axvline(x=s_date, color='#f97316', linestyle='--', linewidth=1.5, alpha=0.6, zorder=1)
+
+    # 設定日期格式 (忠實複製)
+    ax4.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d\n%H:%M'))
+    plt.xticks(rotation=0) 
+
+    # 自動排版
+    plt.tight_layout()
+    
+    # 存檔
+    plt.savefig(filename)
+    plt.close() 
+    return filename

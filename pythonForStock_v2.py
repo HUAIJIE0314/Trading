@@ -40,21 +40,11 @@ KD_K, KD_D, KD_SMOOTH = 60, 3, 3 # KD 指標的參數：60期、平滑3、D值3
 # interest_list = ['2330', '2317', '2454', '2603', '2382', '2337', '3231', '2356', '2495', '5498']
 
 interest_list = ["1717",
-"2312",
-"2327",
 "2356",
-"2495",
-"3231",
 "3481",
 "4989",
 "6116",
-"8070",
-"8112",
-"1815",
-"5443",
-"5498",
-"6548",
-"8240"]
+"8070"]
 
 
 def check_stock_strategy(ticker):
@@ -340,7 +330,28 @@ def main():
         if chart_win_local and os.path.exists(chart_win_local): os.remove(chart_win_local)
         if chart_ret_local and os.path.exists(chart_ret_local): os.remove(chart_ret_local)
         
-        if not url_img_win and not url_img_ret:
+        
+        # 🌟 B. 準備第 1 名詳細 120 回測圖 (新功能) ---
+        url_img_detailed = None
+        if sorted_by_return:
+            print("🎨 正在生成第 1 名詳細 120 回測圖...")
+            top_stock_return = sorted_by_return[0] # 取報酬率第 1 名
+            clean_ticker_top = top_stock_return['symbol']
+            stock_name_top = top_stock_return['name']
+            
+            # 生成詳細圖表本地檔案 (120天)
+            temp_img_detailed = "temp_detailed_backtest.png"
+            chart_detailed_local = generate_detailed_backtest_plot(clean_ticker_top, stock_name_top, BACKTEST_DAYS=120, DayInterval=DayInterval, filename=temp_img_detailed)
+            
+            # 上傳至 ImgBB
+            url_img_detailed = upload_to_imgbb(chart_detailed_local, IMGBB_API_KEY)
+            
+            # 清理本地檔案
+            if chart_detailed_local and os.path.exists(chart_detailed_local): os.remove(chart_detailed_local)
+        
+        
+        
+        if not url_img_win and not url_img_ret and not url_img_detailed:
             print("⚠️ 警告: 圖表上傳失敗，LINE 推播將只包含文字訊息。")
         else:
             print("✅ 圖表上傳成功。")
@@ -426,6 +437,27 @@ def main():
                     )
                 send_line_message(message.strip(), LINE_CHANNEL_ACCESS_TOKEN, target_id)
                 time.sleep(1) # 避免發太快被 LINE 阻擋
+            
+            # ---------------------------------------------------------
+            #特別推播：第 1 名詳細 120 回測圖 🌟🌟🌟
+            # ---------------------------------------------------------
+            if url_img_detailed:
+                # 這裡取出第 1 名資訊，加入清楚說明
+                top_name = sorted_by_return[0]['name']
+                top_symbol = sorted_by_return[0]['symbol']
+                top_ret = sorted_by_return[0]['avg_return']
+                
+                detailed_header = (
+                    f"\n\n🥇 本日績效王 (依平均報酬) 之詳細回測：\n"
+                    f"👉 👉 👉 {top_symbol} {top_name}\n"
+                    f"💰 平均報酬 (30/60/120): {top_ret*100:.1f}%\n"
+                    f"以下為該股過去 120 天之詳細時序圖 (包含買賣點、指標與資金曲線)：\n"
+                    f"----------------------------"
+                )
+                send_line_message(detailed_header.strip(), LINE_CHANNEL_ACCESS_TOKEN, target_id); time.sleep(0.5)
+                
+                # 發送詳細圖片
+                send_line_image(url_img_detailed, LINE_CHANNEL_ACCESS_TOKEN, target_id); time.sleep(1)
                 
                 
                 
