@@ -5,18 +5,24 @@ import requests
 import time
 from tqdm import tqdm
 import random
-
-# enableRSI = True
-DayInterval = 2 # 3 days
-filterFlag = False # True / False
-
-
-
 import os
+import matplotlib.pyplot as plt
+
+from utils import *
+
+
+# ==========================================
+# --- 參數設定區 ---
+# ==========================================
+DayInterval = 3 # 3 days
+filterFlag = True # True / False
+
+
 # LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 # TARGET_ID = os.environ.get('TARGET_ID')
 
 # --- 參數設定區 ---
+IMGBB_API_KEY = "48058fdc3f77f36c3565becf99a8e75a"
 # 1. 請填入你在 LINE Developers 申請的 Channel Access Token
 LINE_CHANNEL_ACCESS_TOKEN = "gbWfkE+jnMW8L9OB4agKPulEeKwzBP95WQ4Non4I6Q5lVCnNdik/l6cJ6PhV/krB7ss5mtjtr66K06m2VU1njN9sbUtfv1HftPlHyrwYCeKCOCqKMdz05lWboSg9FX0G3Wtocisn8hZ2IFFT50WrgwdB04t89/1O/w1cDnyilFU=" # "你的_CHANNEL_ACCESS_TOKEN_請填這"
 # 2. 請填入你的 User ID 或 Group ID (通常是 U 開頭或 C 開頭的一串亂碼)
@@ -24,109 +30,31 @@ LINE_CHANNEL_ACCESS_TOKEN = "gbWfkE+jnMW8L9OB4agKPulEeKwzBP95WQ4Non4I6Q5lVCnNdik
 
 # TARGET_ID = "C404155e7f01a3fd4dbb8fdf425f90991"
 
-TARGET_ID_LIST = ["Ue64e679cfb6307bbe458a1490037f648", "C404155e7f01a3fd4dbb8fdf425f90991", "C904d5fa59a1fdf3afc8cf95ae41c1b9d"]
-
+# TARGET_ID_LIST = ["Ue64e679cfb6307bbe458a1490037f648", "C404155e7f01a3fd4dbb8fdf425f90991", "C904d5fa59a1fdf3afc8cf95ae41c1b9d"]
+TARGET_ID_LIST = ["Ue64e679cfb6307bbe458a1490037f648"]
 
 RSI_PERIOD = 14
 KD_K, KD_D, KD_SMOOTH = 60, 3, 3 # KD 指標的參數：60期、平滑3、D值3
 
 # stock_list = ['2330.TW', '2317.TW', '2454.TW', '2603.TW', '2382.TW', '2337.TW']
-interest_list = ['2330', '2317', '2454', '2603', '2382', '2337']
+# interest_list = ['2330', '2317', '2454', '2603', '2382', '2337', '3231', '2356', '2495', '5498']
 
-# stock_list = ['2330.TW']
-import requests
-
-def get_all_tw_stocks_with_names():
-    """使用政府 Open API 抓取最新股票代號與【中文簡稱】的字典 (中英雙語防呆版)"""
-    print("正在透過政府開放資料下載台股代號與名稱，請稍候...")
-    
-    def extract_codes_and_names(api_url, suffix):
-        try:
-            res = requests.get(api_url, timeout=10)
-            data = res.json()
-            
-            if not data:
-                return {}
-                
-            sample_keys = data[0].keys()
-            code_key = None
-            name_key = None
-            
-            # 自動偵測代號欄位 (加入政府英文欄位 SecuritiesCompanyCode, Symbol)
-            for k in sample_keys:
-                if k in ['公司代號', '證券代號', '股票代號', 'Code', 'code', 'SecuritiesCompanyCode', 'Symbol']:
-                    code_key = k
-                    break
-            if not code_key:
-                for k in sample_keys:
-                    if '代號' in k or 'code' in k.lower(): code_key = k
-                    
-            # 自動偵測名稱欄位 (加入政府英文欄位 CompanyAbbreviation, CompanyName)
-            for k in sample_keys:
-                if k in ['公司簡稱', '證券名稱', '公司名稱', 'Name', 'name', 'CompanyAbbreviation', 'CompanyName']:
-                    name_key = k
-                    break
-            if not name_key:
-                for k in sample_keys:
-                    if '名稱' in k or '簡稱' in k or 'name' in k.lower(): name_key = k
-            
-            if not code_key or not name_key:
-                print(f"⚠️ 找不到代號或名稱欄位！現有欄位: {list(sample_keys)}")
-                return {}
-                
-            # 建立 {代號: 名稱} 的字典
-            stock_dict = {}
-            for item in data:
-                code = str(item.get(code_key, '')).strip()
-                name = str(item.get(name_key, '')).strip()
-                if code and len(code) == 4: 
-                    stock_dict[f"{code}{suffix}"] = name
-                    
-            return stock_dict
-            
-        except Exception as e:
-            print(f"❌ 請求 {api_url} 時發生錯誤: {e}")
-            return {}
-
-    # 分別抓取上市與上櫃字典
-    url_twse = "https://openapi.twse.com.tw/v1/opendata/t187ap03_L"
-    twse_dict = extract_codes_and_names(url_twse, ".TW")
-    
-    url_tpex = "https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap03_O"
-    tpex_dict = extract_codes_and_names(url_tpex, ".TWO")
-    
-    # 將上市與上櫃字典合併
-    full_stock_dict = {**twse_dict, **tpex_dict}
-    
-    if full_stock_dict:
-        print(f"✅ 下載完成！共取得 {len(full_stock_dict)} 檔普通股。")
-        return full_stock_dict
-    else:
-        print("⚠️ 無法取得清單，啟用備用預設清單...")
-        return {'2330.TW': '台積電', '2317.TW': '鴻海', '2454.TW': '聯發科'}
-    
-
-def send_line_message(message, token, target_id):
-    """使用 LINE Messaging API (LINE Bot) 發送推播訊息"""
-    url = "https://api.line.me/v2/bot/message/push"
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {token}"
-    }
-    payload = {
-        "to": target_id,
-        "messages": [
-            {
-                "type": "text",
-                "text": message
-            }
-        ]
-    }
-    response = requests.post(url, headers=headers, json=payload)
-    if response.status_code == 200:
-        print("✅ LINE 訊息推播成功！")
-    else:
-        print(f"❌ 發送失敗，錯誤碼：{response.status_code}, 訊息：{response.text}")
+interest_list = ["1717",
+"2312",
+"2327",
+"2356",
+"2495",
+"3231",
+"3481",
+"4989",
+"6116",
+"8070",
+"8112",
+"1815",
+"5443",
+"5498",
+"6548",
+"8240"]
 
 
 def check_stock_strategy(ticker):
@@ -193,52 +121,30 @@ def check_stock_strategy(ticker):
     return False
 
 
-
-# =============================================================================
-# def main():
-#     print("啟動進階選股程式，開始掃描...")
-#     matched_stocks = []
-#     
-#     #for stock in stock_list:
-#     for stock in tqdm(stock_list, desc="掃描台股進度"):
-#         print(f"正在檢查 {stock} ...")
-#         if check_stock_strategy(stock):
-#             matched_stocks.append(stock)
-#         time.sleep(1) # 避免 yfinance 阻擋
-#         
-#     # 彙整結果並發送 LINE
-#     if matched_stocks:
-#         message = "📈 【動能突破選股結果出爐】\n\n滿足以下條件：\n1. RSI > 60\n2. KD(60) K值向上突破 50\n3. 5MA 向上突破 60MA\n\n符合標的：\n"
-#         for s in matched_stocks:
-#             message += f"• {s}\n"
-#         send_line_message(message, LINE_CHANNEL_ACCESS_TOKEN, TARGET_ID)
-#     else:
-#         print("今日無符合條件的股票。")
-#         send_line_message("今日無符合「動能突破與雙重金叉」條件的股票。", LINE_CHANNEL_ACCESS_TOKEN, TARGET_ID)
-# =============================================================================
-
-# =============================================================================
-# if __name__ == "__main__":
-#     main()
-# =============================================================================
 def main():
-    print("啟動進階選股程式，開始掃描...")
+    # print("啟動進階選股程式，開始掃描...")
+    print(f"啟動進階選股程式 (近{DayInterval}日雙金叉 + RSI>60)，開始掃描...")
+    
     matched_stocks = []
     
     # 取得 {代號: 中文名} 的字典
-    stock_dict = get_all_tw_stocks_with_names() 
+    # stock_dict = get_all_tw_stocks_with_names() 
     # stock_dict = stock_dict[:5]
     
-    
-    # n = 10
-    # stock_dict = dict(list(stock_dict.items())[:n])
+    # 取得政府 Open API {代號: 中文名} 的字典
+    try:
+        stock_dict = get_all_tw_stocks_with_names() 
+    except Exception as e:
+        print(f"❌ 取得股票清單失敗: {e}")
+        return
     
     if filterFlag == True:
-        # 3. 核心修改：只過濾出符合 interest_list 的標的
-        # 我們檢查全台股代號（如 2330.TW）的前 4 碼是否在你的清單中
+        # 過濾出符合 interest_list 的標的
         filtered_list = {k: v for k, v in stock_dict.items() if k[:4] in interest_list}
-        print(f"過濾完成，準備掃描：{list(filtered_list.values())}")
+        print(f"過濾完成，準備掃描以下 {len(filtered_list)} 檔標的...")
         stock_dict = filtered_list
+    else:
+        print(f"未啟用過濾，將掃描全台股 {len(stock_dict)} 檔標的 (時間較長)...")
     
     # 只取出代號來跑迴圈，加上 tqdm 進度條
     for stock_symbol in tqdm(stock_dict.keys(), desc="掃描台股進度"):
@@ -246,11 +152,13 @@ def main():
         # 取得對應的中文公司名稱
         stock_name = stock_dict[stock_symbol] 
         
-        
         # 把代號丟進策略裡去檢查
         if check_stock_strategy(stock_symbol):
             # 如果符合條件，把「代號 + 中文名」整包存進清單裡！
-            matched_stocks.append(f"{stock_symbol} ({stock_name})")
+            # matched_stocks.append(f"{stock_symbol} ({stock_name})")
+            # 去除後綴方便 utils 回測抓取
+            clean_ticker = stock_symbol[:4]
+            matched_stocks.append((clean_ticker, stock_name))
             
         # time.sleep(0.6) # 避免 yfinance 阻擋
         time.sleep(random.uniform(0.5, 0.7))
@@ -258,25 +166,269 @@ def main():
     # 彙整結果並發送 LINE
     if matched_stocks:
         
-        # --- 修改這裡：對 List 裡的每一個 ID 輪流發送 ---
+        #  # --- 修改這裡：對 List 裡的每一個 ID 輪流發送 ---
+        #  for target_id in TARGET_ID_LIST:
+        #      chunk_size = 30 # 一次最多傳送 30 檔標的
+        #      total_matched = len(matched_stocks)
+        #      
+        #      # 第一則訊息：發送標題與總結
+        #      # header_message = f"📈 【動能突破選股結果出爐】\n\n🎯 條件：RSI>60, KD(60) & 5MA 近 {DayInterval} 日雙金叉\n共發現 {total_matched} 檔符合標的：\n"
+        #      # header_message = f"📈 【動能突破選股結果出爐】\n\n🎯 滿足以下條件：條件：RSI > 60\n2. KD(60) K值近 {DayInterval} 日向上突破 50\n3. 5MA 近 {DayInterval} 日向上突破 60MA\n\n符合標的：\n共發現 {total_matched} 檔符合標的：\n"
+        #      header_message = f"📈 【動能突破選股結果出爐】\n\n🎯 滿足以下條件：\n1. RSI > 60\n2. KD(60) K值近 {DayInterval} 日向上突破 50\n3. 5MA 近 {DayInterval} 日向上突破 60MA\n4. 成交量大於 1000 張\n\n符合標的：\n共發現 {total_matched} 檔符合標的：\n"
+        #      send_line_message(header_message, LINE_CHANNEL_ACCESS_TOKEN, target_id)
+        #      
+        #      # 分批發送名單
+        #      for i in range(0, total_matched, chunk_size):
+        #          chunk_list = matched_stocks[i:i + chunk_size]
+        #          message = ""
+        #          for s in chunk_list:
+        #              message += f"• {s}\n"
+        #          send_line_message(message, LINE_CHANNEL_ACCESS_TOKEN, target_id)
+        #          time.sleep(1) # 避免發太快被 LINE 阻擋
+        
+        
+        # print("\n🔄 開始對符合條件的標的進行 30/60/120 天回測計算...")
+        # backtest_results = []
+        # 
+        # for stock_symbol, stock_name in tqdm(matched_stocks, desc="計算回測數據"):
+        #     # 確保傳給 run_backtest 的 TICKER 是乾淨的 4 碼數字 (去掉 .TW 或 .TWO)
+        #     clean_ticker = stock_symbol[:4] 
+        #     
+        #     # 分別取得 30, 60, 120 天的回測結果
+        #     ret_30, win_30 = run_backtest(TICKER=clean_ticker, BACKTEST_DAYS=30, DayInterval=DayInterval)
+        #     ret_60, win_60 = run_backtest(TICKER=clean_ticker, BACKTEST_DAYS=60, DayInterval=DayInterval)
+        #     ret_120, win_120 = run_backtest(TICKER=clean_ticker, BACKTEST_DAYS=120, DayInterval=DayInterval)
+        #     
+        #     # 計算平均勝率與平均報酬
+        #     avg_win_rate = (win_30 + win_60 + win_120) / 3
+        #     avg_return = (ret_30 + ret_60 + ret_120) / 3
+        #     
+        #     backtest_results.append({
+        #         'symbol': clean_ticker,
+        #         'name': stock_name,
+        #         'win_30': win_30, 'win_60': win_60, 'win_120': win_120,
+        #         'ret_30': ret_30, 'ret_60': ret_60, 'ret_120': ret_120,
+        #         'avg_win_rate': avg_win_rate,
+        #         'avg_return': avg_return
+        #     })
+        #     
+        # # 依照條件進行排序
+        # sorted_by_win_rate = sorted(backtest_results, key=lambda x: x['avg_win_rate'], reverse=True)
+        # sorted_by_return = sorted(backtest_results, key=lambda x: x['avg_return'], reverse=True)
+        # 
+        # print("\n✅ 回測計算完成，準備推播訊息...")
+        # 
+        # # 對清單內的每個 LINE ID 發送訊息
+        # for target_id in TARGET_ID_LIST:
+        #     chunk_size = 20 # 一次最多傳送 20 檔標的
+        #     
+        #     # ---------------------------------------------------------
+        #     # 🏆 Stage 1: 推播勝率優先榜
+        #     # ---------------------------------------------------------
+        #     stage1_header = (
+        #         f"🏆 【Stage 1: 勝率優先榜】 🏆\n"
+        #         f"依 30/60/120 天平均勝率排序\n"
+        #         f"共發現 {len(matched_stocks)} 檔標的\n"
+        #         f"----------------------"
+        #     )
+        #     send_line_message(stage1_header, LINE_CHANNEL_ACCESS_TOKEN, target_id)
+        #     time.sleep(1)
+        #     
+        #     for i in range(0, len(sorted_by_win_rate), chunk_size):
+        #         chunk_list = sorted_by_win_rate[i:i + chunk_size]
+        #         message = ""
+        #         for rank, s in enumerate(chunk_list, start=i+1):
+        #             message += (
+        #                 f"第{rank}名: {s['symbol']} {s['name']}\n"
+        #                 f"📊 平均勝率: {s['avg_win_rate']*100:.1f}%\n"
+        #                 f"   (30/60/120: {s['win_30']*100:.0f}% / {s['win_60']*100:.0f}% / {s['win_120']*100:.0f}%)\n"
+        #                 f"💰 平均報酬: {s['avg_return']*100:.1f}%\n"
+        #                 f"   (30/60/120: {s['ret_30']*100:.1f}% / {s['ret_60']*100:.1f}% / {s['ret_120']*100:.1f}%)\n"
+        #                 f"----------------------\n"
+        #             )
+        #         send_line_message(message.strip(), LINE_CHANNEL_ACCESS_TOKEN, target_id)
+        #         time.sleep(1)
+        # 
+        #     # ---------------------------------------------------------
+        #     # 🚀 Stage 2: 推播報酬率優先榜
+        #     # ---------------------------------------------------------
+        #     stage2_header = (
+        #         f"🚀 【Stage 2: 報酬優先榜】 🚀\n"
+        #         f"依 30/60/120 天平均報酬率排序\n"
+        #         f"----------------------"
+        #     )
+        #     send_line_message(stage2_header, LINE_CHANNEL_ACCESS_TOKEN, target_id)
+        #     time.sleep(1)
+        #     
+        #     for i in range(0, len(sorted_by_return), chunk_size):
+        #         chunk_list = sorted_by_return[i:i + chunk_size]
+        #         message = ""
+        #         for rank, s in enumerate(chunk_list, start=i+1):
+        #             message += (
+        #                 f"第{rank}名: {s['symbol']} {s['name']}\n"
+        #                 f"💰 平均報酬: {s['avg_return']*100:.1f}%\n"
+        #                 f"   (30/60/120: {s['ret_30']*100:.1f}% / {s['ret_60']*100:.1f}% / {s['ret_120']*100:.1f}%)\n"
+        #                 f"📊 平均勝率: {s['avg_win_rate']*100:.1f}%\n"
+        #                 f"   (30/60/120: {s['win_30']*100:.0f}% / {s['win_60']*100:.0f}% / {s['win_120']*100:.0f}%)\n"
+        #                 f"----------------------\n"
+        #             )
+        #         send_line_message(message.strip(), LINE_CHANNEL_ACCESS_TOKEN, target_id)
+        #         time.sleep(1)
+        
+        
+        print(f"\n✅ 掃描完成，發現 {len(matched_stocks)} 檔符合條件標的。")
+        print("🔄 開始進行 30/60/120 天回測計算並準備可視化圖表...")
+        
+        backtest_results = []
+        
+        # 進行多時段回測
+        for clean_ticker, stock_name in tqdm(matched_stocks, desc="計算回測數據"):
+            # 分別取得 30, 60, 120 天的回測結果 (報酬率, 勝率)
+            ret_30, win_30 = run_backtest(TICKER=clean_ticker, BACKTEST_DAYS=30, DayInterval=DayInterval)
+            ret_60, win_60 = run_backtest(TICKER=clean_ticker, BACKTEST_DAYS=60, DayInterval=DayInterval)
+            ret_120, win_120 = run_backtest(TICKER=clean_ticker, BACKTEST_DAYS=120, DayInterval=DayInterval)
+            
+            # 計算 3 段時段的平均
+            avg_win_rate = (win_30 + win_60 + win_120) / 3
+            avg_return = (ret_30 + ret_60 + ret_120) / 3
+            
+            backtest_results.append({
+                'symbol': clean_ticker,
+                'name': stock_name,
+                'win_30': win_30, 'win_60': win_60, 'win_120': win_120,
+                'ret_30': ret_30, 'ret_60': ret_60, 'ret_120': ret_120,
+                'avg_win_rate': avg_win_rate,
+                'avg_return': avg_return
+            })
+            
+        # 依照條件進行排序
+        # Stage 1: 平均勝率 由高~低
+        sorted_by_win_rate = sorted(backtest_results, key=lambda x: x['avg_win_rate'], reverse=True)
+        # Stage 2: 平均報酬 由高~低
+        sorted_by_return = sorted(backtest_results, key=lambda x: x['avg_return'], reverse=True)
+        
+        print("\n📊 數據彙整與排序完成。")
+
+        # ==========================================
+        # 🌟 核心更新：生成圖表與 LINE 推播
+        # ==========================================
+        
+        # --- A. 準備圖片與上傳 (先上傳一次，節省 API 次數) ---
+        print("🎨 正在生成 Stage 1 & 2 可視化圖表並上傳...")
+        
+        # 生成 Stage 1 勝率圖表
+        temp_img_win = "temp_stage1_win.png"
+        chart_win_local = generate_ranking_chart(
+            sorted_by_win_rate, 
+            'avg_win_rate', 
+            f'Stage 1: 勝率優先榜 (Top 5)\n(RSI>60 + 近{DayInterval}日雙金叉條件)',
+            temp_img_win
+        )
+        url_img_win = upload_to_imgbb(chart_win_local, IMGBB_API_KEY)
+        
+        # 生成 Stage 2 報酬圖表
+        temp_img_ret = "temp_stage2_ret.png"
+        chart_ret_local = generate_ranking_chart(
+            sorted_by_return, 
+            'avg_return', 
+            f'Stage 2: 報酬優先榜 (Top 5)\n(30/60/120天平均)',
+            temp_img_ret
+        )
+        url_img_ret = upload_to_imgbb(chart_ret_local, IMGBB_API_KEY)
+        
+        # 清理本地臨時圖片 (上傳後就不用了)
+        if chart_win_local and os.path.exists(chart_win_local): os.remove(chart_win_local)
+        if chart_ret_local and os.path.exists(chart_ret_local): os.remove(chart_ret_local)
+        
+        if not url_img_win and not url_img_ret:
+            print("⚠️ 警告: 圖表上傳失敗，LINE 推播將只包含文字訊息。")
+        else:
+            print("✅ 圖表上傳成功。")
+
+        # --- B. 對所有接收者輪流發送 (結合圖片與文字) ---
+        chunk_size = 20 # 文字訊息 chunk 依舊留著, 縮小為 20 筆
+        
         for target_id in TARGET_ID_LIST:
-            chunk_size = 30 # 一次最多傳送 30 檔標的
-            total_matched = len(matched_stocks)
+            # print(f"📤 正在發送訊息給 {target_id[:5]}...")
             
-            # 第一則訊息：發送標題與總結
-            # header_message = f"📈 【動能突破選股結果出爐】\n\n🎯 條件：RSI>60, KD(60) & 5MA 近 {DayInterval} 日雙金叉\n共發現 {total_matched} 檔符合標的：\n"
-            # header_message = f"📈 【動能突破選股結果出爐】\n\n🎯 滿足以下條件：條件：RSI > 60\n2. KD(60) K值近 {DayInterval} 日向上突破 50\n3. 5MA 近 {DayInterval} 日向上突破 60MA\n\n符合標的：\n共發現 {total_matched} 檔符合標的：\n"
-            header_message = f"📈 【動能突破選股結果出爐】\n\n🎯 滿足以下條件：\n1. RSI > 60\n2. KD(60) K值近 {DayInterval} 日向上突破 50\n3. 5MA 近 {DayInterval} 日向上突破 60MA\n4. 成交量大於 1000 張\n\n符合標的：\n共發現 {total_matched} 檔符合標的：\n"
-            send_line_message(header_message, LINE_CHANNEL_ACCESS_TOKEN, target_id)
+            # ---------------------------------------------------------
+            #🏆🏆🏆 Stage 1: 推播勝率優先榜 🏆🏆🏆
+            # ---------------------------------------------------------
             
-            # 分批發送名單
-            for i in range(0, total_matched, chunk_size):
-                chunk_list = matched_stocks[i:i + chunk_size]
+            # 1. 發送 Stage 1 標題
+            stage1_header = (
+                f"🏆🏆🏆 【Stage 1: 勝率優先榜】 🏆🏆🏆\n"
+                f"🎯 條件：RSI>60, KD(60) & 5MA 近 {DayInterval} 日雙金叉\n"
+                f"依 30/60/120 天平均勝率排序\n"
+                f"共發現 {len(matched_stocks)} 檔符合標的：\n"
+                f"----------------------------"
+            )
+            send_line_message(stage1_header, LINE_CHANNEL_ACCESS_TOKEN, target_id)
+            time.sleep(0.5)
+            
+            # 🌟 2. 發送 Stage 1 圖表圖片
+            if url_img_win:
+                send_line_image(url_img_win, LINE_CHANNEL_ACCESS_TOKEN, target_id)
+                time.sleep(1)
+            
+            # 3. 分批發送詳細明細 (文字)
+            send_line_message("📋詳細回測明細 (Stage 1):", LINE_CHANNEL_ACCESS_TOKEN, target_id)
+            for i in range(0, len(sorted_by_win_rate), chunk_size):
+                chunk_list = sorted_by_win_rate[i:i + chunk_size]
                 message = ""
-                for s in chunk_list:
-                    message += f"• {s}\n"
-                send_line_message(message, LINE_CHANNEL_ACCESS_TOKEN, target_id)
+                for rank, s in enumerate(chunk_list, start=i+1):
+                    # 優化文字排版：將勝率和報酬拆開，更易讀
+                    message += (
+                        f"🏆第{rank}名: {s['symbol']} {s['name']}\n"
+                        f"📊 [平均勝率]: {s['avg_win_rate']*100:.1f}%\n"
+                        f"   (30D: {s['win_30']*100:.0f}% / 60D: {s['win_60']*100:.0f}% / 120D: {s['win_120']*100:.0f}%)\n"
+                        f"💰 [平均報酬]: {s['avg_return']*100:.1f}%\n"
+                        f"   (30D: {s['ret_30']*100:.1f}% / 60D: {s['ret_60']*100:.1f}% / 120D: {s['ret_120']*100:.1f}%)\n"
+                        f"----------------------------\n"
+                    )
+                send_line_message(message.strip(), LINE_CHANNEL_ACCESS_TOKEN, target_id)
                 time.sleep(1) # 避免發太快被 LINE 阻擋
+
+            time.sleep(2) # Stage 間隔久一點
+
+            # ---------------------------------------------------------
+            #🚀🚀🚀 Stage 2: 推播報酬優先榜 🚀🚀🚀
+            # ---------------------------------------------------------
+            
+            # 1. 發送 Stage 2 標題 (加入明顯區隔)
+            stage2_header = (
+                f"\n\n🚀🚀🚀 【Stage 2: 報酬優先榜】 🚀🚀🚀\n"
+                f"依 30/60/120 天平均報酬率排序\n"
+                f"----------------------------"
+            )
+            send_line_message(stage2_header.strip(), LINE_CHANNEL_ACCESS_TOKEN, target_id)
+            time.sleep(0.5)
+            
+            # 🌟 2. 發送 Stage 2 圖表圖片
+            if url_img_ret:
+                send_line_image(url_img_ret, LINE_CHANNEL_ACCESS_TOKEN, target_id)
+                time.sleep(1)
+            
+            # 3. 分批發送詳細明細 (文字)
+            send_line_message("📋詳細回測明細 (Stage 2):", LINE_CHANNEL_ACCESS_TOKEN, target_id)
+            for i in range(0, len(sorted_by_return), chunk_size):
+                chunk_list = sorted_by_return[i:i + chunk_size]
+                message = ""
+                for rank, s in enumerate(chunk_list, start=i+1):
+                    # 排版與上同
+                    message += (
+                        f"🚀第{rank}名: {s['symbol']} {s['name']}\n"
+                        f"💰 [平均報酬]: {s['avg_return']*100:.1f}%\n"
+                        f"   (30D: {s['ret_30']*100:.1f}% / 60D: {s['ret_60']*100:.1f}% / 120D: {s['ret_120']*100:.1f}%)\n"
+                        f"📊 [平均勝率]: {s['avg_win_rate']*100:.1f}%\n"
+                        f"   (30D: {s['win_30']*100:.0f}% / 60D: {s['win_60']*100:.0f}% / 120D: {s['win_120']*100:.0f}%)\n"
+                        f"----------------------------\n"
+                    )
+                send_line_message(message.strip(), LINE_CHANNEL_ACCESS_TOKEN, target_id)
+                time.sleep(1) # 避免發太快被 LINE 阻擋
+                
+                
+                
     else:
         print("\n今日無符合條件的股票。")
         # send_line_message("\n今日無符合「動能突破與雙重金叉」條件的股票。", LINE_CHANNEL_ACCESS_TOKEN, TARGET_ID)
