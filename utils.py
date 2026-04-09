@@ -17,6 +17,7 @@ def set_zh_font():
     """嘗試設定 matplotlib 的中文自型，依序尋找系統內建字型"""
     # 常見的繁體中文字型名稱 (Windows, Mac, Linux)
     common_zh_fonts = [
+        'WenQuanYi Zen Hei',  # 🌟 新增：Linux 最強大的備援中文字型
         'Microsoft JhengHei', # Windows 微軟正黑體
         'Heiti TC',           # Mac 黑體
         'Arial Unicode MS',   # 通用
