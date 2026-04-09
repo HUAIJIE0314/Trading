@@ -7,7 +7,7 @@ from tqdm import tqdm
 import random
 
 # enableRSI = True
-DayInterval = 3 # 3 days
+DayInterval = 2 # 3 days
 filterFlag = False # True / False
 
 
