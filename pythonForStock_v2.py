@@ -14,7 +14,7 @@ from utils import *
 # ==========================================
 # --- 參數設定區 ---
 # ==========================================
-DayInterval = 3 # 3 days
+DayInterval = 2 # 3 days
 filterFlag = False # True / False
 
 
@@ -30,8 +30,9 @@ LINE_CHANNEL_ACCESS_TOKEN = "gbWfkE+jnMW8L9OB4agKPulEeKwzBP95WQ4Non4I6Q5lVCnNdik
 
 # TARGET_ID = "C404155e7f01a3fd4dbb8fdf425f90991"
 
-TARGET_ID_LIST = ["Ue64e679cfb6307bbe458a1490037f648", "C404155e7f01a3fd4dbb8fdf425f90991", "C904d5fa59a1fdf3afc8cf95ae41c1b9d"]
+# TARGET_ID_LIST = ["Ue64e679cfb6307bbe458a1490037f648", "C404155e7f01a3fd4dbb8fdf425f90991", "C904d5fa59a1fdf3afc8cf95ae41c1b9d"]
 # TARGET_ID_LIST = ["Ue64e679cfb6307bbe458a1490037f648"]
+TARGET_ID_LIST = ["C404155e7f01a3fd4dbb8fdf425f90991", "C904d5fa59a1fdf3afc8cf95ae41c1b9d"]
 
 RSI_PERIOD = 14
 KD_K, KD_D, KD_SMOOTH = 60, 3, 3 # KD 指標的參數：60期、平滑3、D值3
@@ -40,7 +41,10 @@ KD_K, KD_D, KD_SMOOTH = 60, 3, 3 # KD 指標的參數：60期、平滑3、D值3
 # interest_list = ['2330', '2317', '2454', '2603', '2382', '2337', '3231', '2356', '2495', '5498']
 
 interest_list = ["1717",
+"2356",
 "3481",
+"4989",
+"6116",
 "8070"]
 
 

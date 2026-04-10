@@ -250,7 +250,40 @@ def run_backtest(TICKER='2337', BACKTEST_DAYS=100, DayInterval=3):
         # 每天記錄最新的總資產
         current_equity = capital + (position * current_price * (1 - 0.001425 - 0.003))
         equity_curve.append(current_equity)
+    
+    # 🔼 for 迴圈結束
+    if position > 0:
+        final_price = df['Close'].iloc[-1]
+        final_date = df.index[-1]
+        
+        # 模擬以最後一天價格賣出
+        sell_revenue = position * final_price * (1 - 0.001425 - 0.003)
+        capital += sell_revenue
+        
+        profit = sell_revenue - (position * entry_price * 1.001425)
+        profit_pct = (final_price - entry_price) / entry_price * 100
+        
+        # 記錄這筆交易，確保勝率分母有算到它
+        trade_history.append({
+            'Buy_Date': entry_date,     
+            'Sell_Date': final_date,          
+            'Buy_Price': entry_price,
+            'Sell_Price': final_price,
+            'Profit': profit,
+            'Return(%)': round(profit_pct, 2)
+        })
+        
+        # 將資金曲線的最後一天更新為賣出後的現金淨值
+        equity_curve[-1] = capital
+        
+        # 清空部位 (以防後續還有其他運算邏輯用到)
+        position = 0
+        entry_price = 0.0
+        entry_date = None
 
+    # ==========================================
+    # 計算最終總報酬與勝率
+    # ==========================================
     equity_curve = equity_curve[1:]
     df['Equity_Curve'] = equity_curve
 
