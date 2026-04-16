@@ -14,7 +14,7 @@ from utils import *
 # ==========================================
 # --- 參數設定區 ---
 # ==========================================
-DayInterval = 2 # 3 days
+DayInterval = 3 # 3 days
 filterFlag = False # True / False
 
 # LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
