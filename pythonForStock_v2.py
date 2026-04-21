@@ -14,7 +14,7 @@ from utils import *
 # ==========================================
 # --- 參數設定區 ---
 # ==========================================
-DayInterval = 3 # 3 days
+DayInterval = 2 # 3 days
 filterFlag = False # True / False
 
 # LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
@@ -91,7 +91,7 @@ def check_stock_strategy(ticker):
             # 如果是剛上市連 5 天資料都沒有的極端情況，就保守一點直接看歷史總量平均
             if (df['Volume'].sum() / (len(df) / bars_per_day)) < (1000 * 1000):
                 return False
-                
+
         # 1. 計算技術指標
         df['RSI'] = df.ta.rsi(length=RSI_PERIOD)
         df['5MA'] = df.ta.sma(length=5)
