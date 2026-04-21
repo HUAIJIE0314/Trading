@@ -146,8 +146,32 @@ def run_backtest(TICKER='2337', BACKTEST_DAYS=100, DayInterval=3):
         # 若找不到股票，預設回傳 0
         return 0.0, 0.0
 
+
     # ==========================================
-    # 2. 獲取資料與計算指標
+    # 🌟 新增：獲取日線資料並計算 120MA
+    # ==========================================
+    # 抓取 2 年的日線資料以確保回測區間內每一天都有 120MA 可用
+    df_daily = yf.download(TICKER, period="2y", interval="1d", progress=False)
+    if df_daily.empty: return 0.0, 0.0
+    
+    if isinstance(df_daily.columns, pd.MultiIndex):
+        df_daily.columns = df_daily.columns.get_level_values(0)
+        
+    try:
+        df_daily.index = df_daily.index.tz_convert('Asia/Taipei')
+    except TypeError:
+        df_daily.index = df_daily.index.tz_localize('UTC').tz_convert('Asia/Taipei')
+
+    df_daily['120MA'] = df_daily['Close'].rolling(window=120).mean()
+    # ⚠️ 極度重要：為了避免未來函數，當天的 60 分K 只能看「昨天」收盤後的 120MA
+    df_daily['120MA_prev'] = df_daily['120MA'].shift(1)
+    
+    # 建立日期字串到 MA 的字典 mapping
+    ma_dict = dict(zip(df_daily.index.strftime('%Y-%m-%d'), df_daily['120MA_prev']))
+
+
+    # ==========================================
+    # 2. 獲取 60分K 資料與計算指標
     # ==========================================
     if BACKTEST_DAYS > 730:
         BACKTEST_DAYS = 730
@@ -165,7 +189,11 @@ def run_backtest(TICKER='2337', BACKTEST_DAYS=100, DayInterval=3):
         df.index = df.index.tz_convert('Asia/Taipei')
     except TypeError:
         df.index = df.index.tz_localize('UTC').tz_convert('Asia/Taipei')
-        
+    
+    # 🌟 將日線的 120MA 映射到 60 分 K 棒上
+    df['Date_str'] = df.index.strftime('%Y-%m-%d')
+    df['Daily_120MA'] = df['Date_str'].map(ma_dict).ffill() # 找不到的用前值補
+
     # 計算技術指標
     df['RSI'] = df.ta.rsi(length=RSI_PERIOD)
     df['5MA'] = df.ta.sma(length=5)
@@ -187,9 +215,9 @@ def run_backtest(TICKER='2337', BACKTEST_DAYS=100, DayInterval=3):
     df['KD_Cross_5d'] = df['KD_Cross'].rolling(window=lookback_bars).max()
     df['MA_Cross_5d'] = df['MA_Cross'].rolling(window=lookback_bars).max()
 
-    # 買進：RSI > 60 且 5MA 金叉 60MA
+    # 買進：RSI > 60 且 5MA 金叉 60MA，買進條件更新：加上 (收盤價 > 日線 120MA) 作為長線保護
     df['MA_Golden_Cross'] = (df['KD_Cross_5d'] == 1) & (df['MA_Cross_5d'] == 1) 
-    df['Buy_Signal'] = (df['RSI'] > 60) & (df['MA_Golden_Cross'])
+    df['Buy_Signal'] = (df['RSI'] > 60) & (df['MA_Golden_Cross']) & (df['Close'] > df['Daily_120MA'])
 
     # 賣出：5MA 死叉 60MA 且 RSI < 50
     df['MA_Death_Cross'] = (df['5MA'] < df[MA_select]) & (df['5MA'].shift(1) >= df[MA_select].shift(1))
@@ -230,9 +258,16 @@ def run_backtest(TICKER='2337', BACKTEST_DAYS=100, DayInterval=3):
                 sell_revenue = position * current_price * (1 - 0.001425 - 0.003)
                 capital += sell_revenue
                 
-                profit = sell_revenue - (position * entry_price * 1.001425)
-                profit_pct = (current_price - entry_price) / entry_price * 100
+                # profit = sell_revenue - (position * entry_price * 1.001425)
+                # profit_pct = (current_price - entry_price) / entry_price * 100
                 
+                # 真實花費的總成本 (包含買進手續費)
+                total_cost = position * entry_price * 1.001425
+                # 淨利潤 (扣除總成本)
+                profit = sell_revenue - total_cost
+                # 真實單筆交易淨報酬率
+                profit_pct = (profit / total_cost) * 100
+
                 trade_history.append({
                     'Buy_Date': entry_date,     
                     'Sell_Date': date,          
@@ -260,9 +295,16 @@ def run_backtest(TICKER='2337', BACKTEST_DAYS=100, DayInterval=3):
         sell_revenue = position * final_price * (1 - 0.001425 - 0.003)
         capital += sell_revenue
         
-        profit = sell_revenue - (position * entry_price * 1.001425)
-        profit_pct = (final_price - entry_price) / entry_price * 100
+        # profit = sell_revenue - (position * entry_price * 1.001425)
+        # profit_pct = (final_price - entry_price) / entry_price * 100
         
+        # 真實花費的總成本 (包含買進手續費)
+        total_cost = position * entry_price * 1.001425
+        # 淨利潤 (扣除總成本)
+        profit = sell_revenue - total_cost
+        # 真實單筆交易淨報酬率
+        profit_pct = (profit / total_cost) * 100
+
         # 記錄這筆交易，確保勝率分母有算到它
         trade_history.append({
             'Buy_Date': entry_date,     
@@ -456,8 +498,26 @@ def generate_detailed_backtest_plot(TICKER, stock_name, BACKTEST_DAYS=120, DayIn
             else: TICKER = TICKER + ".TW" # 預設假設
         except: TICKER = TICKER + ".TW"
 
+
     # ==========================================
-    # B. 獲取資料與計算指標 (忠實複製)
+    # 🌟 新增：繪圖用的日線資料處理
+    # ==========================================
+    df_daily = yf.download(TICKER, period="2y", interval="1d", progress=False)
+    if not df_daily.empty:
+        if isinstance(df_daily.columns, pd.MultiIndex):
+            df_daily.columns = df_daily.columns.get_level_values(0)
+        try: df_daily.index = df_daily.index.tz_convert('Asia/Taipei')
+        except TypeError: df_daily.index = df_daily.index.tz_localize('UTC').tz_convert('Asia/Taipei')
+        
+        df_daily['120MA'] = df_daily['Close'].rolling(window=120).mean()
+        df_daily['120MA_prev'] = df_daily['120MA'].shift(1)
+        ma_dict = dict(zip(df_daily.index.strftime('%Y-%m-%d'), df_daily['120MA_prev']))
+    else:
+        ma_dict = {}
+
+
+    # ==========================================
+    # 獲取 60分K 資料與計算指標
     # ==========================================
     if BACKTEST_DAYS > 730: BACKTEST_DAYS = 730
 
@@ -472,7 +532,11 @@ def generate_detailed_backtest_plot(TICKER, stock_name, BACKTEST_DAYS=120, DayIn
         df.index = df.index.tz_convert('Asia/Taipei')
     except TypeError:
         df.index = df.index.tz_localize('UTC').tz_convert('Asia/Taipei')
-        
+    
+    # 映射 120MA
+    df['Date_str'] = df.index.strftime('%Y-%m-%d')
+    df['Daily_120MA'] = df['Date_str'].map(ma_dict).ffill()
+
     df['RSI'] = df.ta.rsi(length=RSI_PERIOD)
     df['5MA'] = df.ta.sma(length=5)
     df['60MA'] = df.ta.sma(length=60)
@@ -490,8 +554,9 @@ def generate_detailed_backtest_plot(TICKER, stock_name, BACKTEST_DAYS=120, DayIn
     df['KD_Cross_5d'] = df['KD_Cross'].rolling(window=lookback_bars).max()
     df['MA_Cross_5d'] = df['MA_Cross'].rolling(window=lookback_bars).max()
 
+    # 🌟 買入條件更新
     df['MA_Golden_Cross'] = (df['KD_Cross_5d'] == 1) & (df['MA_Cross_5d'] == 1) 
-    df['Buy_Signal'] = (df['RSI'] > 60) & (df['MA_Golden_Cross'])
+    df['Buy_Signal'] = (df['RSI'] > 60) & (df['MA_Golden_Cross']) & (df['Close'] > df['Daily_120MA'])
 
     df['MA_Death_Cross'] = (df['5MA'] < df[MA_select]) & (df['5MA'].shift(1) >= df[MA_select].shift(1))
     df['Sell_Signal'] = (df['MA_Death_Cross']) & (df['RSI'] < 50)
@@ -509,8 +574,9 @@ def generate_detailed_backtest_plot(TICKER, stock_name, BACKTEST_DAYS=120, DayIn
     buy_points = []
     sell_points = []
 
-    for date, row in df.iterrows():
-        current_price = row['Close']
+    # for date, row in df.iterrows():
+    for i, (date, row) in enumerate(df.iterrows()): # 🌟 加入 enumerate 取得整數索引 i
+        current_price = row['Close'] 
         
         if position == 0:
             if row['Buy_Signal']:
@@ -519,13 +585,15 @@ def generate_detailed_backtest_plot(TICKER, stock_name, BACKTEST_DAYS=120, DayIn
                     position = shares_to_buy
                     entry_price = current_price
                     capital = capital - (position * entry_price * 1.001425)
-                    buy_points.append((date, entry_price))
+                    # buy_points.append((date, entry_price))
+                    buy_points.append((i, date, entry_price))
                 
         elif position > 0:
             if row['Sell_Signal']:
                 sell_revenue = position * current_price * (1 - 0.001425 - 0.003)
                 capital += sell_revenue
-                sell_points.append((date, current_price))
+                # sell_points.append((date, current_price))
+                sell_points.append((i, date, current_price))
                 position = 0
                 entry_price = 0.0
 
@@ -538,23 +606,45 @@ def generate_detailed_backtest_plot(TICKER, stock_name, BACKTEST_DAYS=120, DayIn
     # D. 繪圖 (忠實複製包含垂直買賣線)
     # ==========================================
     # 設定支援中文的字體 (由 set_zh_font 初始化)
-    
+    x_values = range(len(df))
     # 創建四張圖 (價格, RSI, KD, 資金)
     fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(15, 20), sharex=True, gridspec_kw={'height_ratios': [3.5, 1, 1, 1.5]}, dpi=100)
 
     # 1. 價格圖 (ax1)
-    ax1.plot(df.index, df['Close'], label='Close Price', color='#d1d5db', linewidth=2, zorder=3)
-    ax1.plot(df.index, df['5MA'], label='5MA', color='#3b82f6', linewidth=1.2, alpha=0.8, zorder=2)
-    ax1.plot(df.index, df['60MA'], label='60MA', color='#ef4444', linewidth=1.2, alpha=0.8, zorder=2)
-    if MA_select != '60MA': ax1.plot(df.index, df[MA_select], label=MA_select, color='#ef4444', linewidth=1.2, alpha=0.8, zorder=2)
-
+    ax1.plot(x_values, df['Close'], label='Close Price', color='#d1d5db', linewidth=2, zorder=3)
+    ax1.plot(x_values, df['5MA'], label='5MA', color='#3b82f6', linewidth=1.2, alpha=0.8, zorder=2)
+    # ax1.plot(df.index, df['60MA'], label='60MA', color='#ef4444', linewidth=1.2, alpha=0.8, zorder=2)
+    
+    if MA_select != '60MA':
+        ax1.plot(x_values, df[MA_select], label=MA_select, color='#ef4444', linewidth=1.2, alpha=0.8, zorder=2)
+    else: 
+        ax1.plot(x_values, df['60MA'], label='60MA', color='#ef4444', linewidth=1.2, alpha=0.8, zorder=2)
+        
+# =============================================================================
+#     if buy_points:
+#         b_dates, b_prices = zip(*buy_points)
+#         ax1.scatter(b_dates, b_prices, marker='^', color='#22c55e', label='Buy', s=120, zorder=5)
+# 
+#     if sell_points:
+#         s_dates, s_prices = zip(*sell_points)
+#         ax1.scatter(s_dates, s_prices, marker='v', color='#f97316', label='Sell', s=120, zorder=5)
+# =============================================================================
+    
+    all_axes = [ax1, ax2, ax3, ax4]
     if buy_points:
-        b_dates, b_prices = zip(*buy_points)
-        ax1.scatter(b_dates, b_prices, marker='^', color='#22c55e', label='Buy', s=120, zorder=5)
+        b_indices, b_dates, b_prices = zip(*buy_points) # 解包出整數索引
+        ax1.scatter(b_indices, b_prices, marker='^', color='#22c55e', label='Buy', s=120, zorder=5)
+        for b_idx in b_indices:
+            for ax in all_axes:
+                ax.axvline(x=b_idx, color='#22c55e', linestyle='--', linewidth=1.5, alpha=0.6, zorder=1)
 
+    # 賣出標記與垂直線
     if sell_points:
-        s_dates, s_prices = zip(*sell_points)
-        ax1.scatter(s_dates, s_prices, marker='v', color='#f97316', label='Sell', s=120, zorder=5)
+        s_indices, s_dates, s_prices = zip(*sell_points) # 解包出整數索引
+        ax1.scatter(s_indices, s_prices, marker='v', color='#f97316', label='Sell', s=120, zorder=5)
+        for s_idx in s_indices:
+            for ax in all_axes:
+                ax.axvline(x=s_idx, color='#f97316', linestyle='--', linewidth=1.5, alpha=0.6, zorder=1)
 
     ax1.set_title(f'{TICKER[:4]}({stock_name}) - 60min Trend Strategy Backtest (Last {BACKTEST_DAYS} Days)', fontsize=16, fontweight='bold')
     ax1.set_ylabel('Price (TWD)', fontsize=12)
@@ -562,7 +652,7 @@ def generate_detailed_backtest_plot(TICKER, stock_name, BACKTEST_DAYS=120, DayIn
     ax1.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.7)
 
     # 2. RSI 圖 (ax2)
-    ax2.plot(df.index, df['RSI'], color='#8b5cf6', linewidth=1.2)
+    ax2.plot(x_values, df['RSI'], color='#8b5cf6', linewidth=1.2)
     ax2.axhline(60, color='#22c55e', linestyle='--', linewidth=1, alpha=0.8) 
     ax2.axhline(50, color='#f97316', linestyle='--', linewidth=1, alpha=0.8) 
     ax2.set_ylabel('RSI (14)', fontsize=12)
@@ -570,8 +660,8 @@ def generate_detailed_backtest_plot(TICKER, stock_name, BACKTEST_DAYS=120, DayIn
     ax2.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.5)
 
     # 3. KD 圖 (ax3)
-    ax3.plot(df.index, df[k_col], label='K (60,3)', color='#f59e0b', linewidth=1.5) 
-    ax3.plot(df.index, df[d_col], label='D (3)', color='#0ea5e9', linewidth=1)      
+    ax3.plot(x_values, df[k_col], label='K (60,3)', color='#f59e0b', linewidth=1.5) 
+    ax3.plot(x_values, df[d_col], label='D (3)', color='#0ea5e9', linewidth=1)      
     ax3.axhline(80, color='#ef4444', linestyle='--', linewidth=1, alpha=0.5) 
     ax3.axhline(50, color='#6b7280', linestyle='-', linewidth=0.8, alpha=0.5)  
     ax3.axhline(20, color='#22c55e', linestyle='--', linewidth=1, alpha=0.5) 
@@ -581,33 +671,40 @@ def generate_detailed_backtest_plot(TICKER, stock_name, BACKTEST_DAYS=120, DayIn
     ax3.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.5)
 
     # 4. 資金曲線圖 (ax4)
-    ax4.plot(df.index, df['Equity_Curve'], color='#10b981', linewidth=2)
+    ax4.plot(x_values, df['Equity_Curve'], color='#10b981', linewidth=2)
     ax4.set_ylabel('Total Equity', fontsize=12)
     ax4.grid(True, which='both', linestyle='--', linewidth=0.5, alpha=0.5)
 
     # 🌟 核心新增：畫出貫穿四張圖的垂直虛線 (忠實複製)
     all_axes = [ax1, ax2, ax3, ax4]
 
-    # 買進畫綠色虛線
-    if buy_points:
-        for b_date, _ in buy_points:
-            for ax in all_axes:
-                ax.axvline(x=b_date, color='#22c55e', linestyle='--', linewidth=1.5, alpha=0.6, zorder=1)
-
-    # 賣出畫藍色虛線
-    if sell_points:
-        for s_date, _ in sell_points:
-            for ax in all_axes:
-                ax.axvline(x=s_date, color='#f97316', linestyle='--', linewidth=1.5, alpha=0.6, zorder=1)
-
+# =============================================================================
+#     # 買進畫綠色虛線
+#     if buy_points:
+#         for b_date, _ in buy_points:
+#             for ax in all_axes:
+#                 ax.axvline(x=b_date, color='#22c55e', linestyle='--', linewidth=1.5, alpha=0.6, zorder=1)
+# 
+#     # 賣出畫藍色虛線
+#     if sell_points:
+#         for s_date, _ in sell_points:
+#             for ax in all_axes:
+#                 ax.axvline(x=s_date, color='#f97316', linestyle='--', linewidth=1.5, alpha=0.6, zorder=1)
+# =============================================================================
+    
     # 設定日期格式 (忠實複製)
-    ax4.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d\n%H:%M'))
-    plt.xticks(rotation=0) 
+    # ax4.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d\n%H:%M'))
+    # plt.xticks(rotation=0) 
+    tick_spacing = max(1, len(df) // 15) 
+    ax4.set_xticks(list(x_values)[::tick_spacing])
+    ax4.set_xticklabels(df.index.strftime('%Y/%m/%d\n%H:%M')[::tick_spacing])
+    plt.xticks(rotation=0)
 
     # 自動排版
     plt.tight_layout()
     
     # 存檔
     plt.savefig(filename)
+    # plt.show()
     plt.close() 
     return filename
