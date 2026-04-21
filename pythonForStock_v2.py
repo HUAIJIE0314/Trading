@@ -14,7 +14,7 @@ from utils import *
 # ==========================================
 # --- 參數設定區 ---
 # ==========================================
-DayInterval = 2 # 3 days
+DayInterval = 3 # 3 days
 filterFlag = False # True / False
 
 # LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
@@ -68,12 +68,30 @@ def check_stock_strategy(ticker):
         
         # 🌟 新增：成交量濾網 (Volume)
         # yfinance 的 Volume 欄位預設是「股數」，所以 1000 張 = 1,000,000 股
-        today_volume = df['Volume'].iloc[-1]
+        # today_volume = df['Volume'].iloc[-1]
         
         # 如果今天成交量小於 1000 張 (1百萬股)，直接淘汰，不用算後面的技術指標了！
-        if today_volume < 1000000:
-            return False
+        # if today_volume < 1000000:
+            # return False
         
+        volume_window_days = 5  # 設定觀察視窗為過去 5 天
+        bars_per_day = 5
+        window_bars = volume_window_days * bars_per_day
+        
+        # 確保資料量足夠計算視窗
+        if len(df) >= window_bars:
+            # 將過去 25 根 60分K (即過去 5 天) 的成交量加總，再除以天數，得出「日均量」
+            past_volume_sum = df['Volume'].tail(window_bars).sum()
+            avg_daily_volume = past_volume_sum / volume_window_days
+            
+            # 檢查 5 日均量是否小於門檻
+            if avg_daily_volume < (1000 * 1000): 
+                return False
+        else:
+            # 如果是剛上市連 5 天資料都沒有的極端情況，就保守一點直接看歷史總量平均
+            if (df['Volume'].sum() / (len(df) / bars_per_day)) < (1000 * 1000):
+                return False
+                
         # 1. 計算技術指標
         df['RSI'] = df.ta.rsi(length=RSI_PERIOD)
         df['5MA'] = df.ta.sma(length=5)
