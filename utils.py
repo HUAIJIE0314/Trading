@@ -218,7 +218,7 @@ def run_backtest(TICKER='2337', BACKTEST_DAYS=100, DayInterval=3):
 
     # 買進：RSI > 60 且 5MA 金叉 60MA，買進條件更新：加上 (收盤價 > 日線 120MA) 作為長線保護
     df['MA_Golden_Cross'] = (df['KD_Cross_5d'] == 1) & (df['MA_Cross_5d'] == 1) 
-    df['Buy_Signal'] = (df['RSI'] > 60) & (df['MA_Golden_Cross']) & (df['Close'] > df['Daily_120MA'])
+    df['Buy_Signal'] = (df['RSI'] > 60) & (df['MA_Golden_Cross']) # & (df['Close'] > df['Daily_120MA'])
 
     # 賣出：5MA 死叉 60MA 且 RSI < 50
     df['MA_Death_Cross'] = (df['5MA'] < df[MA_select]) & (df['5MA'].shift(1) >= df[MA_select].shift(1))
