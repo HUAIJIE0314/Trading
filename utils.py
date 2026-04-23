@@ -564,7 +564,7 @@ def generate_detailed_backtest_plot(TICKER, stock_name, BACKTEST_DAYS=120, DayIn
 
     # 🌟 買入條件更新
     df['MA_Golden_Cross'] = (df['KD_Cross_5d'] == 1) & (df['MA_Cross_5d'] == 1) 
-    df['Buy_Signal'] = (df['RSI'] > 60) & (df['MA_Golden_Cross']) & (df['Close'] > df['Daily_120MA'])
+    df['Buy_Signal'] = (df['RSI'] > 60) & (df['MA_Golden_Cross']) # & (df['Close'] > df['Daily_120MA'])
 
     df['MA_Death_Cross'] = (df['5MA'] < df[MA_select]) & (df['5MA'].shift(1) >= df[MA_select].shift(1))
     df['Sell_Signal'] = (df['MA_Death_Cross']) & (df['RSI'] < 50)
