@@ -17,6 +17,7 @@ from utils import *
 DayInterval = 2 # 3 days
 filterFlag = False # True / False
 
+
 # LINE_CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 # TARGET_ID = os.environ.get('TARGET_ID')
 
@@ -27,12 +28,12 @@ LINE_CHANNEL_ACCESS_TOKEN = "gbWfkE+jnMW8L9OB4agKPulEeKwzBP95WQ4Non4I6Q5lVCnNdik
 # 2. 請填入你的 User ID 或 Group ID (通常是 U 開頭或 C 開頭的一串亂碼)
 # TARGET_ID = "Ue64e679cfb6307bbe458a1490037f648" # "你的_USER_ID_或_GROUP_ID_請填這" 
 
+# TARGET_ID = []
 # TARGET_ID = "C404155e7f01a3fd4dbb8fdf425f90991"
 
 # TARGET_ID_LIST = ["Ue64e679cfb6307bbe458a1490037f648", "C404155e7f01a3fd4dbb8fdf425f90991", "C904d5fa59a1fdf3afc8cf95ae41c1b9d"]
 # TARGET_ID_LIST = ["Ue64e679cfb6307bbe458a1490037f648"]
-# TARGET_ID_LIST = ["C404155e7f01a3fd4dbb8fdf425f90991", "C904d5fa59a1fdf3afc8cf95ae41c1b9d"]
-TARGET_ID_LIST = ["Ue64e679cfb6307bbe458a1490037f648"]
+TARGET_ID_LIST = []
 
 RSI_PERIOD = 14
 KD_K, KD_D, KD_SMOOTH = 60, 3, 3 # KD 指標的參數：60期、平滑3、D值3
@@ -40,14 +41,22 @@ KD_K, KD_D, KD_SMOOTH = 60, 3, 3 # KD 指標的參數：60期、平滑3、D值3
 # stock_list = ['2330.TW', '2317.TW', '2454.TW', '2603.TW', '2382.TW', '2337.TW']
 # interest_list = ['2330', '2317', '2454', '2603', '2382', '2337', '3231', '2356', '2495', '5498']
 
-interest_list = ["1717",
-"2356",
-"3481",
-"4989",
-"6116",
-"8070"]
+interest_list = ["2408", "2344", "2337", "3260"]
+interest_list = ["2408"]
+interest_list = ["1102", "6907", "2542", "2108"]
+
+interest_list = [
+'1102',
+'2108',
+'2449',
+'2542',
+'2881',
+'5314',
+'6907'
+]
 
 
+# interest_list = ["2408", "2344", "2337", "3260"]
 def check_stock_strategy(ticker):
     """檢查單一股票是否符合進階策略條件 (60分K線版本)"""
     try:
@@ -70,9 +79,8 @@ def check_stock_strategy(ticker):
         # 🌟 新增：成交量濾網 (Volume)
         # yfinance 的 Volume 欄位預設是「股數」，所以 1000 張 = 1,000,000 股
         # today_volume = df['Volume'].iloc[-1]
-        
         # 如果今天成交量小於 1000 張 (1百萬股)，直接淘汰，不用算後面的技術指標了！
-        # if today_volume < 1000000:
+        # if today_volume < (1000*100):
             # return False
         
         volume_window_days = 5  # 設定觀察視窗為過去 5 天
@@ -92,7 +100,7 @@ def check_stock_strategy(ticker):
             # 如果是剛上市連 5 天資料都沒有的極端情況，就保守一點直接看歷史總量平均
             if (df['Volume'].sum() / (len(df) / bars_per_day)) < (1000 * 1000):
                 return False
-
+        
         # 1. 計算技術指標
         df['RSI'] = df.ta.rsi(length=RSI_PERIOD)
         df['5MA'] = df.ta.sma(length=5)
@@ -111,15 +119,26 @@ def check_stock_strategy(ticker):
         
         # --- 判斷最近 5 天的狀態 ---
         # 條件 A: 「今天」的 RSI > 60
-        cond_rsi = df['RSI'].iloc[-1] > 60
+        cond_rsi = df['RSI'].iloc[-5:] > 60 # .iloc[-5:]
+        cond_rsi = cond_rsi.any()
+        # cond_rsi = df['RSI'].iloc[-1] > 60
+
         
         # 條件 B: 過去 5 天內 (包含今天)，是否有任何一天 kd_cross_signal 為 True
         cond_k_cross_5d = kd_cross_signal.tail(5*DayInterval).any()
+        # cond_k_cross_5d = kd_cross_signal.rolling(window=5*DayInterval).max()
         
         # 條件 C: 過去 5 天內 (包含今天)，是否有任何一天 ma_cross_signal 為 True
         cond_ma_cross_5d = ma_cross_signal.tail(5*DayInterval).any()
+        # cond_ma_cross_5d = ma_cross_signal.rolling(window=5*DayInterval).max()
+        
+        # print(f'\nticker = {ticker}')
+        # print(f'cond_rsi = {cond_rsi}', df['RSI'].iloc[-1])
+        # print(f'cond_k_cross_5d = {cond_k_cross_5d}')
+        # print(f'cond_ma_cross_5d = {cond_ma_cross_5d}')
         
         # 綜合判斷 (三個條件同時滿足)
+        # if cond_rsi & cond_k_cross_5d & cond_ma_cross_5d:
         if cond_rsi and cond_k_cross_5d and cond_ma_cross_5d:
             print(f"⭐ 發現符合標的：{ticker} (近{DayInterval}日內觸發雙金叉，且今日 RSI>60)")
             return True
@@ -170,120 +189,10 @@ def main():
             matched_stocks.append((clean_ticker, stock_name))
             
         # time.sleep(0.6) # 避免 yfinance 阻擋
-        time.sleep(random.uniform(0.5, 0.7))
+        time.sleep(random.uniform(0.6, 0.7))
         
     # 彙整結果並發送 LINE
     if matched_stocks:
-        
-        #  # --- 修改這裡：對 List 裡的每一個 ID 輪流發送 ---
-        #  for target_id in TARGET_ID_LIST:
-        #      chunk_size = 30 # 一次最多傳送 30 檔標的
-        #      total_matched = len(matched_stocks)
-        #      
-        #      # 第一則訊息：發送標題與總結
-        #      # header_message = f"📈 【動能突破選股結果出爐】\n\n🎯 條件：RSI>60, KD(60) & 5MA 近 {DayInterval} 日雙金叉\n共發現 {total_matched} 檔符合標的：\n"
-        #      # header_message = f"📈 【動能突破選股結果出爐】\n\n🎯 滿足以下條件：條件：RSI > 60\n2. KD(60) K值近 {DayInterval} 日向上突破 50\n3. 5MA 近 {DayInterval} 日向上突破 60MA\n\n符合標的：\n共發現 {total_matched} 檔符合標的：\n"
-        #      header_message = f"📈 【動能突破選股結果出爐】\n\n🎯 滿足以下條件：\n1. RSI > 60\n2. KD(60) K值近 {DayInterval} 日向上突破 50\n3. 5MA 近 {DayInterval} 日向上突破 60MA\n4. 成交量大於 1000 張\n\n符合標的：\n共發現 {total_matched} 檔符合標的：\n"
-        #      send_line_message(header_message, LINE_CHANNEL_ACCESS_TOKEN, target_id)
-        #      
-        #      # 分批發送名單
-        #      for i in range(0, total_matched, chunk_size):
-        #          chunk_list = matched_stocks[i:i + chunk_size]
-        #          message = ""
-        #          for s in chunk_list:
-        #              message += f"• {s}\n"
-        #          send_line_message(message, LINE_CHANNEL_ACCESS_TOKEN, target_id)
-        #          time.sleep(1) # 避免發太快被 LINE 阻擋
-        
-        
-        # print("\n🔄 開始對符合條件的標的進行 30/60/120 天回測計算...")
-        # backtest_results = []
-        # 
-        # for stock_symbol, stock_name in tqdm(matched_stocks, desc="計算回測數據"):
-        #     # 確保傳給 run_backtest 的 TICKER 是乾淨的 4 碼數字 (去掉 .TW 或 .TWO)
-        #     clean_ticker = stock_symbol[:4] 
-        #     
-        #     # 分別取得 30, 60, 120 天的回測結果
-        #     ret_30, win_30 = run_backtest(TICKER=clean_ticker, BACKTEST_DAYS=30, DayInterval=DayInterval)
-        #     ret_60, win_60 = run_backtest(TICKER=clean_ticker, BACKTEST_DAYS=60, DayInterval=DayInterval)
-        #     ret_120, win_120 = run_backtest(TICKER=clean_ticker, BACKTEST_DAYS=120, DayInterval=DayInterval)
-        #     
-        #     # 計算平均勝率與平均報酬
-        #     avg_win_rate = (win_30 + win_60 + win_120) / 3
-        #     avg_return = (ret_30 + ret_60 + ret_120) / 3
-        #     
-        #     backtest_results.append({
-        #         'symbol': clean_ticker,
-        #         'name': stock_name,
-        #         'win_30': win_30, 'win_60': win_60, 'win_120': win_120,
-        #         'ret_30': ret_30, 'ret_60': ret_60, 'ret_120': ret_120,
-        #         'avg_win_rate': avg_win_rate,
-        #         'avg_return': avg_return
-        #     })
-        #     
-        # # 依照條件進行排序
-        # sorted_by_win_rate = sorted(backtest_results, key=lambda x: x['avg_win_rate'], reverse=True)
-        # sorted_by_return = sorted(backtest_results, key=lambda x: x['avg_return'], reverse=True)
-        # 
-        # print("\n✅ 回測計算完成，準備推播訊息...")
-        # 
-        # # 對清單內的每個 LINE ID 發送訊息
-        # for target_id in TARGET_ID_LIST:
-        #     chunk_size = 20 # 一次最多傳送 20 檔標的
-        #     
-        #     # ---------------------------------------------------------
-        #     # 🏆 Stage 1: 推播勝率優先榜
-        #     # ---------------------------------------------------------
-        #     stage1_header = (
-        #         f"🏆 【Stage 1: 勝率優先榜】 🏆\n"
-        #         f"依 30/60/120 天平均勝率排序\n"
-        #         f"共發現 {len(matched_stocks)} 檔標的\n"
-        #         f"----------------------"
-        #     )
-        #     send_line_message(stage1_header, LINE_CHANNEL_ACCESS_TOKEN, target_id)
-        #     time.sleep(1)
-        #     
-        #     for i in range(0, len(sorted_by_win_rate), chunk_size):
-        #         chunk_list = sorted_by_win_rate[i:i + chunk_size]
-        #         message = ""
-        #         for rank, s in enumerate(chunk_list, start=i+1):
-        #             message += (
-        #                 f"第{rank}名: {s['symbol']} {s['name']}\n"
-        #                 f"📊 平均勝率: {s['avg_win_rate']*100:.1f}%\n"
-        #                 f"   (30/60/120: {s['win_30']*100:.0f}% / {s['win_60']*100:.0f}% / {s['win_120']*100:.0f}%)\n"
-        #                 f"💰 平均報酬: {s['avg_return']*100:.1f}%\n"
-        #                 f"   (30/60/120: {s['ret_30']*100:.1f}% / {s['ret_60']*100:.1f}% / {s['ret_120']*100:.1f}%)\n"
-        #                 f"----------------------\n"
-        #             )
-        #         send_line_message(message.strip(), LINE_CHANNEL_ACCESS_TOKEN, target_id)
-        #         time.sleep(1)
-        # 
-        #     # ---------------------------------------------------------
-        #     # 🚀 Stage 2: 推播報酬率優先榜
-        #     # ---------------------------------------------------------
-        #     stage2_header = (
-        #         f"🚀 【Stage 2: 報酬優先榜】 🚀\n"
-        #         f"依 30/60/120 天平均報酬率排序\n"
-        #         f"----------------------"
-        #     )
-        #     send_line_message(stage2_header, LINE_CHANNEL_ACCESS_TOKEN, target_id)
-        #     time.sleep(1)
-        #     
-        #     for i in range(0, len(sorted_by_return), chunk_size):
-        #         chunk_list = sorted_by_return[i:i + chunk_size]
-        #         message = ""
-        #         for rank, s in enumerate(chunk_list, start=i+1):
-        #             message += (
-        #                 f"第{rank}名: {s['symbol']} {s['name']}\n"
-        #                 f"💰 平均報酬: {s['avg_return']*100:.1f}%\n"
-        #                 f"   (30/60/120: {s['ret_30']*100:.1f}% / {s['ret_60']*100:.1f}% / {s['ret_120']*100:.1f}%)\n"
-        #                 f"📊 平均勝率: {s['avg_win_rate']*100:.1f}%\n"
-        #                 f"   (30/60/120: {s['win_30']*100:.0f}% / {s['win_60']*100:.0f}% / {s['win_120']*100:.0f}%)\n"
-        #                 f"----------------------\n"
-        #             )
-        #         send_line_message(message.strip(), LINE_CHANNEL_ACCESS_TOKEN, target_id)
-        #         time.sleep(1)
-        
         
         print(f"\n✅ 掃描完成，發現 {len(matched_stocks)} 檔符合條件標的。")
         print("🔄 開始進行 30/60/120 天回測計算並準備可視化圖表...")
@@ -334,7 +243,6 @@ def main():
             temp_img_win
         )
         url_img_win = upload_to_imgbb(chart_win_local, IMGBB_API_KEY)
-        
         # 生成 Stage 2 報酬圖表
         temp_img_ret = "temp_stage2_ret.png"
         chart_ret_local = generate_ranking_chart(
