@@ -54,7 +54,8 @@ def get_all_tw_stocks_with_names():
     
     def extract_codes_and_names(api_url, suffix):
         try:
-            res = requests.get(api_url, timeout=10)
+            res = requests.get(api_url, timeout=30)
+            res.raise_for_status() # 檢查 HTTP 狀態碼
             data = res.json()
             
             if not data:
@@ -224,6 +225,8 @@ def run_backtest(TICKER='2337', BACKTEST_DAYS=100, DayInterval=3):
     df['Sell_Signal'] = (df['MA_Death_Cross']) & (df['RSI'] < 50)
 
     df = df.dropna()
+    if df.empty:
+        return 0.0, 0.0
 
     # ==========================================
     # 3. 執行回測邏輯 (事件驅動)
@@ -327,15 +330,20 @@ def run_backtest(TICKER='2337', BACKTEST_DAYS=100, DayInterval=3):
     # 計算最終總報酬與勝率
     # ==========================================
     equity_curve = equity_curve[1:]
+    
+    if len(equity_curve) == 0 or df.empty:
+        return 0.0, 0.0
+        
     df['Equity_Curve'] = equity_curve
 
-    total_return = (df['Equity_Curve'].iloc[-1] - INITIAL_CAPITAL) / INITIAL_CAPITAL
-
-    total_trades = len(trade_history) 
-    winning_trades = sum(1 for t in trade_history if t['Profit'] > 0)
-    win_rate = (winning_trades / total_trades) if total_trades > 0 else 0
-
-    return total_return, win_rate
+    try:
+        total_return = (df['Equity_Curve'].iloc[-1] - INITIAL_CAPITAL) / INITIAL_CAPITAL
+        total_trades = len(trade_history) 
+        winning_trades = sum(1 for t in trade_history if t['Profit'] > 0)
+        win_rate = (winning_trades / total_trades) if total_trades > 0 else 0
+        return total_return, win_rate
+    except (IndexError, KeyError):
+        return 0.0, 0.0
 
 
 # ==========================================
@@ -562,7 +570,8 @@ def generate_detailed_backtest_plot(TICKER, stock_name, BACKTEST_DAYS=120, DayIn
     df['Sell_Signal'] = (df['MA_Death_Cross']) & (df['RSI'] < 50)
 
     df = df.dropna()
-    if df.empty: return None
+    if df.empty or len(df) < 2: 
+        return None
 
     # ==========================================
     # C. 執行回測邏輯 (忠實複製)
