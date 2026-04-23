@@ -54,8 +54,7 @@ def get_all_tw_stocks_with_names():
     
     def extract_codes_and_names(api_url, suffix):
         try:
-            res = requests.get(api_url, timeout=30)
-            res.raise_for_status() # 檢查 HTTP 狀態碼
+            res = requests.get(api_url, timeout=10)
             data = res.json()
             
             if not data:
@@ -152,23 +151,23 @@ def run_backtest(TICKER='2337', BACKTEST_DAYS=100, DayInterval=3):
     # 🌟 新增：獲取日線資料並計算 120MA
     # ==========================================
     # 抓取 2 年的日線資料以確保回測區間內每一天都有 120MA 可用
-    df_daily = yf.download(TICKER, period="2y", interval="1d", progress=False)
-    if df_daily.empty: return 0.0, 0.0
+    # df_daily = yf.download(TICKER, period="2y", interval="1d", progress=False)
+    # if df_daily.empty: return 0.0, 0.0
     
-    if isinstance(df_daily.columns, pd.MultiIndex):
-        df_daily.columns = df_daily.columns.get_level_values(0)
+    # if isinstance(df_daily.columns, pd.MultiIndex):
+    #     df_daily.columns = df_daily.columns.get_level_values(0)
         
-    try:
-        df_daily.index = df_daily.index.tz_convert('Asia/Taipei')
-    except TypeError:
-        df_daily.index = df_daily.index.tz_localize('UTC').tz_convert('Asia/Taipei')
+    # try:
+    #     df_daily.index = df_daily.index.tz_convert('Asia/Taipei')
+    # except TypeError:
+    #     df_daily.index = df_daily.index.tz_localize('UTC').tz_convert('Asia/Taipei')
 
-    df_daily['120MA'] = df_daily['Close'].rolling(window=120).mean()
+    # df_daily['120MA'] = df_daily['Close'].rolling(window=120).mean()
     # ⚠️ 極度重要：為了避免未來函數，當天的 60 分K 只能看「昨天」收盤後的 120MA
-    df_daily['120MA_prev'] = df_daily['120MA'].shift(1)
+    # df_daily['120MA_prev'] = df_daily['120MA'].shift(1)
     
     # 建立日期字串到 MA 的字典 mapping
-    ma_dict = dict(zip(df_daily.index.strftime('%Y-%m-%d'), df_daily['120MA_prev']))
+    # ma_dict = dict(zip(df_daily.index.strftime('%Y-%m-%d'), df_daily['120MA_prev']))
 
 
     # ==========================================
@@ -192,8 +191,8 @@ def run_backtest(TICKER='2337', BACKTEST_DAYS=100, DayInterval=3):
         df.index = df.index.tz_localize('UTC').tz_convert('Asia/Taipei')
     
     # 🌟 將日線的 120MA 映射到 60 分 K 棒上
-    df['Date_str'] = df.index.strftime('%Y-%m-%d')
-    df['Daily_120MA'] = df['Date_str'].map(ma_dict).ffill() # 找不到的用前值補
+    # df['Date_str'] = df.index.strftime('%Y-%m-%d')
+    # df['Daily_120MA'] = df['Date_str'].map(ma_dict).ffill() # 找不到的用前值補
 
     # 計算技術指標
     df['RSI'] = df.ta.rsi(length=RSI_PERIOD)
@@ -225,8 +224,6 @@ def run_backtest(TICKER='2337', BACKTEST_DAYS=100, DayInterval=3):
     df['Sell_Signal'] = (df['MA_Death_Cross']) & (df['RSI'] < 50)
 
     df = df.dropna()
-    if df.empty:
-        return 0.0, 0.0
 
     # ==========================================
     # 3. 執行回測邏輯 (事件驅動)
@@ -330,20 +327,15 @@ def run_backtest(TICKER='2337', BACKTEST_DAYS=100, DayInterval=3):
     # 計算最終總報酬與勝率
     # ==========================================
     equity_curve = equity_curve[1:]
-    
-    if len(equity_curve) == 0 or df.empty:
-        return 0.0, 0.0
-        
     df['Equity_Curve'] = equity_curve
 
-    try:
-        total_return = (df['Equity_Curve'].iloc[-1] - INITIAL_CAPITAL) / INITIAL_CAPITAL
-        total_trades = len(trade_history) 
-        winning_trades = sum(1 for t in trade_history if t['Profit'] > 0)
-        win_rate = (winning_trades / total_trades) if total_trades > 0 else 0
-        return total_return, win_rate
-    except (IndexError, KeyError):
-        return 0.0, 0.0
+    total_return = (df['Equity_Curve'].iloc[-1] - INITIAL_CAPITAL) / INITIAL_CAPITAL
+
+    total_trades = len(trade_history) 
+    winning_trades = sum(1 for t in trade_history if t['Profit'] > 0)
+    win_rate = (winning_trades / total_trades) if total_trades > 0 else 0
+
+    return total_return, win_rate
 
 
 # ==========================================
@@ -510,18 +502,18 @@ def generate_detailed_backtest_plot(TICKER, stock_name, BACKTEST_DAYS=120, DayIn
     # ==========================================
     # 🌟 新增：繪圖用的日線資料處理
     # ==========================================
-    df_daily = yf.download(TICKER, period="2y", interval="1d", progress=False)
-    if not df_daily.empty:
-        if isinstance(df_daily.columns, pd.MultiIndex):
-            df_daily.columns = df_daily.columns.get_level_values(0)
-        try: df_daily.index = df_daily.index.tz_convert('Asia/Taipei')
-        except TypeError: df_daily.index = df_daily.index.tz_localize('UTC').tz_convert('Asia/Taipei')
-        
-        df_daily['120MA'] = df_daily['Close'].rolling(window=120).mean()
-        df_daily['120MA_prev'] = df_daily['120MA'].shift(1)
-        ma_dict = dict(zip(df_daily.index.strftime('%Y-%m-%d'), df_daily['120MA_prev']))
-    else:
-        ma_dict = {}
+    # df_daily = yf.download(TICKER, period="2y", interval="1d", progress=False)
+    # if not df_daily.empty:
+    #     if isinstance(df_daily.columns, pd.MultiIndex):
+    #         df_daily.columns = df_daily.columns.get_level_values(0)
+    #     try: df_daily.index = df_daily.index.tz_convert('Asia/Taipei')
+    #     except TypeError: df_daily.index = df_daily.index.tz_localize('UTC').tz_convert('Asia/Taipei')
+    #     
+    #     df_daily['120MA'] = df_daily['Close'].rolling(window=120).mean()
+    #     df_daily['120MA_prev'] = df_daily['120MA'].shift(1)
+    #     ma_dict = dict(zip(df_daily.index.strftime('%Y-%m-%d'), df_daily['120MA_prev']))
+    # else:
+    #     ma_dict = {}
 
 
     # ==========================================
@@ -542,8 +534,8 @@ def generate_detailed_backtest_plot(TICKER, stock_name, BACKTEST_DAYS=120, DayIn
         df.index = df.index.tz_localize('UTC').tz_convert('Asia/Taipei')
     
     # 映射 120MA
-    df['Date_str'] = df.index.strftime('%Y-%m-%d')
-    df['Daily_120MA'] = df['Date_str'].map(ma_dict).ffill()
+    # df['Date_str'] = df.index.strftime('%Y-%m-%d')
+    # df['Daily_120MA'] = df['Date_str'].map(ma_dict).ffill()
 
     df['RSI'] = df.ta.rsi(length=RSI_PERIOD)
     df['5MA'] = df.ta.sma(length=5)
@@ -570,8 +562,9 @@ def generate_detailed_backtest_plot(TICKER, stock_name, BACKTEST_DAYS=120, DayIn
     df['Sell_Signal'] = (df['MA_Death_Cross']) & (df['RSI'] < 50)
 
     df = df.dropna()
-    if df.empty or len(df) < 2: 
-        return None
+    # if df.empty: return None
+    if df.empty:
+        return 0.0, 0.0
 
     # ==========================================
     # C. 執行回測邏輯 (忠實複製)
