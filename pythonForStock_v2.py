@@ -119,9 +119,9 @@ def check_stock_strategy(ticker):
         
         # --- 判斷最近 5 天的狀態 ---
         # 條件 A: 「今天」的 RSI > 60
-        cond_rsi = df['RSI'].iloc[-5:] > 60 # .iloc[-5:]
-        cond_rsi = cond_rsi.any()
-        # cond_rsi = df['RSI'].iloc[-1] > 60
+        # cond_rsi = df['RSI'].iloc[-5:] > 60 # .iloc[-5:]
+        # cond_rsi = cond_rsi.any()
+        cond_rsi = df['RSI'].iloc[-1] > 60
 
         
         # 條件 B: 過去 5 天內 (包含今天)，是否有任何一天 kd_cross_signal 為 True
